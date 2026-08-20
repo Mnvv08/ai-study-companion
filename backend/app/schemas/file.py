@@ -1,14 +1,14 @@
 """
 app/schemas/file.py
 ───────────────────
-Pydantic schemas for file upload and file information responses.
+Pydantic schemas for document upload, processing status, and document details.
 """
 
-from pydantic import BaseModel
 from datetime import datetime
+from pydantic import BaseModel, ConfigDict
 
 
-class FileResponse(BaseModel):
+class DocumentResponse(BaseModel):
     id: str
     filename: str
     file_size_bytes: int
@@ -16,9 +16,23 @@ class FileResponse(BaseModel):
     status: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
-class FileDetailResponse(FileResponse):
+class DocumentStatusResponse(BaseModel):
+    id: str
+    filename: str
+    status: str
+    error_message: str | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DocumentDetailResponse(DocumentResponse):
     extracted_text_preview: str | None = None
+
+
+# Backwards compatibility aliases
+FileResponse = DocumentResponse
+FileDetailResponse = DocumentDetailResponse

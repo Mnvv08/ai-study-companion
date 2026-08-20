@@ -14,4 +14,4 @@ class Base(DeclarativeBase):
 
 # Register all models here for metadata discovery
 from app.models.user import User  # noqa: F401, E402
-from app.models.file import UploadedFile  # noqa: F401, E402
+from app.models.file import Document, UploadedFile  # noqa: F401, E402

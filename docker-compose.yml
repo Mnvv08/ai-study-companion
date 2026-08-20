@@ -17,15 +17,15 @@ services:
     container_name: study_companion_db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-studyuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-study_companion}
     ports:
       - "5432:5432"          # Expose to host so you can connect via pgAdmin/DBeaver
     volumes:
       - postgres_data:/var/lib/postgresql/data   # Persist data across restarts
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-studyuser} -d ${POSTGRES_DB:-study_companion}"]
       interval: 10s
       timeout: 5s
       retries: 5

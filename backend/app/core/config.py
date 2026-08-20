@@ -28,15 +28,24 @@ class Settings(BaseSettings):
     DEBUG: bool = Field(default=False)
 
     # ── Database ─────────────────────────────────────────────────
-    DATABASE_URL: str = Field(...)   # Required — no default
+    DATABASE_URL: str = Field(
+        default="postgresql://studyuser:changeme@postgres:5432/study_companion",
+        description="Full PostgreSQL connection URL (e.g., postgresql://user:pass@host:5432/dbname)"
+    )
 
     # ── JWT ──────────────────────────────────────────────────────
-    SECRET_KEY: str = Field(...)     # Required — must be set in .env
+    SECRET_KEY: str = Field(
+        default="dev-insecure-secret-key-replace-in-env-32bytes",
+        description="Secret key used to sign JWT tokens. Must be kept private in production."
+    )
     ALGORITHM: str = Field(default="HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=60)
 
     # ── LLM API ──────────────────────────────────────────────────
-    OPENAI_API_KEY: str = Field(...)
+    OPENAI_API_KEY: str = Field(
+        default="sk-placeholder",
+        description="OpenAI API key used for completions and embeddings."
+    )
     LLM_MODEL: str = Field(default="gpt-4o-mini")
     EMBEDDING_MODEL: str = Field(default="text-embedding-3-small")
 

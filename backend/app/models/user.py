@@ -25,7 +25,12 @@ class User(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
-    # Relationship to uploaded files — if user is deleted, delete their files
-    files: Mapped[list["UploadedFile"]] = relationship(
-        "UploadedFile", back_populates="owner", cascade="all, delete-orphan"
+    # Relationship to uploaded documents — if user is deleted, delete their files
+    documents: Mapped[list["Document"]] = relationship(
+        "Document", back_populates="owner", cascade="all, delete-orphan"
     )
+
+    # Alias for backwards compatibility
+    @property
+    def files(self):
+        return self.documents

@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api.v1 import health, auth, files, notes, rag, generation
+from app.api.v1 import health, auth, documents, files, notes, rag, generation
 from app.db.base import Base
 from app.db.session import engine
 
@@ -50,6 +50,8 @@ app.add_middleware(
 # Register Routers
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(documents.router, prefix="/api/v1")
+app.include_router(documents.router)  # Also expose directly at /documents/upload etc.
 app.include_router(files.router, prefix="/api/v1")
 app.include_router(notes.router, prefix="/api/v1")
 app.include_router(generation.router, prefix="/api/v1")
