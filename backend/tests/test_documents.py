@@ -123,18 +123,34 @@ def test_upload_oversized_file_rejected(auth_headers, monkeypatch):
     assert "exceeds the maximum allowed limit" in response.json()["detail"]
 
 
-def test_upload_valid_pdf_success(auth_headers, test_user):
-    """Verify valid PDF upload returns 201 with document ID and status='pending'."""
-    pdf_content = b"%PDF-1.4 sample lecture content on Algorithms"
+def test_upload_valid_pdf_success(auth_headers, test_user, monkeypatch):
+    """Verify valid PDF upload returns 201 with document ID and status='processed' upon extraction."""
+    # Mock extract_text_from_pdf to simulate successful extraction without needing real binary PDF stream
+    monkeypatch.setattr(
+        "app.api.v1.documents.extract_text_from_pdf",
+        lambda path: "Extracted lecture content for Algorithms and Data Structures."
+    )
+    pdf_content = b"%PDF-1.4 valid stream mock"
     files = {"file": ("algorithms_lecture1.pdf", io.BytesIO(pdf_content), "application/pdf")}
     
     response = client.post("/documents/upload", headers=auth_headers, files=files)
     assert response.status_code == 201
     data = response.json()
     assert "id" in data
-    assert data["status"] == "pending"
+    assert data["status"] == "processed"
     assert data["filename"] == "algorithms_lecture1.pdf"
     assert data["file_size_bytes"] == len(pdf_content)
+
+
+def test_upload_unreadable_pdf_marks_status_failed_without_crashing(auth_headers, test_user):
+    """Verify that unreadable/corrupt PDF results in status='failed' and does not crash the request."""
+    junk_pdf_content = b"%PDF-1.4 JUNK NOT REAL PDF DATA"
+    files = {"file": ("corrupt.pdf", io.BytesIO(junk_pdf_content), "application/pdf")}
+    
+    response = client.post("/documents/upload", headers=auth_headers, files=files)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["status"] == "failed"
 
 
 def test_get_document_status(auth_headers, test_user):

@@ -24,7 +24,8 @@ bcrypt==4.0.1                       # Pin bcrypt version to prevent passlib comp
 python-multipart==0.0.12
 
 # ── PDF Extraction & Text Processing ─────────────────────────────
-pymupdf==1.24.10                    # PyMuPDF for fast PDF text extraction
+pdfplumber==0.11.4                  # Layout-aware PDF text and table extraction
+pymupdf==1.24.10                    # PyMuPDF fast C-backed PDF engine
 langchain-text-splitters==0.3.0     # Chunking utility only (lightweight, no full LangChain)
 
 # ── AI, Embeddings & Vector DB ────────────────────────────────────

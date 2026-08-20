@@ -29,6 +29,8 @@ from app.schemas.file import (
     DocumentDetailResponse,
 )
 
+from app.services.extraction import extract_text_from_pdf
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
@@ -46,7 +48,7 @@ def sanitize_filename(filename: str) -> str:
     "/upload",
     response_model=DocumentResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Upload a PDF study document",
+    summary="Upload and extract a PDF study document",
 )
 async def upload_document(
     file: UploadFile = File(..., description="PDF study document file"),
@@ -54,17 +56,14 @@ async def upload_document(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Upload and validate a PDF study document.
+    Upload and extract text from a PDF study document.
 
-    Validations enforced:
-      1. File type check: Must be '.pdf' extension (reject others with 400 Bad Request).
-      2. File size check: Must not exceed MAX_UPLOAD_SIZE_MB (reject with 413 Payload Too Large).
-      3. Non-empty check: File must contain data > 0 bytes.
-
-    On success:
-      - Saves file to local uploads directory with a collision-free UUID prefix.
-      - Creates a row in PostgreSQL `documents` table with status='pending'.
-      - If DB insertion fails, automatically removes the written file to avoid orphans.
+    Flow:
+      1. Edge validation: file format (.pdf only) & file size limit.
+      2. Save PDF file to local storage.
+      3. Create document record with status='pending'.
+      4. Synchronously extract text using pdfplumber.
+      5. Update document status to 'processed' (or 'failed' if corrupt/empty) gracefully.
     """
     raw_filename = file.filename or "document.pdf"
     clean_filename = sanitize_filename(raw_filename)
@@ -119,7 +118,7 @@ async def upload_document(
             detail="Failed to save document to storage. Please try again.",
         )
 
-    # ── 4. Save Record to Database (Atomic with Disk Cleanup) ───────
+    # ── 4. Save Initial Record to Database ─────────────────────────
     try:
         db_document = Document(
             user_id=current_user.id,
@@ -132,11 +131,9 @@ async def upload_document(
         db.add(db_document)
         db.commit()
         db.refresh(db_document)
-        return db_document
     except SQLAlchemyError as db_err:
         db.rollback()
         logger.error(f"Database insertion failure for document '{clean_filename}': {db_err}")
-        # Clean up file on disk so we don't leave orphan files
         if saved_file_path and os.path.exists(saved_file_path):
             try:
                 os.remove(saved_file_path)
@@ -146,6 +143,26 @@ async def upload_document(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to record document metadata in database.",
         )
+
+    # ── 5. Synchronous Text Extraction (pdfplumber) ─────────────────
+    try:
+        extracted_text = extract_text_from_pdf(saved_file_path)
+        # Successfully extracted text
+        db_document.status = "processed"
+        db_document.error_message = None
+        logger.info(f"Successfully extracted {len(extracted_text)} characters from {clean_filename}")
+    except ValueError as extraction_err:
+        logger.warning(f"Text extraction warning for '{clean_filename}': {extraction_err}")
+        db_document.status = "failed"
+        db_document.error_message = str(extraction_err)
+    except Exception as unk_err:
+        logger.error(f"Unexpected extraction error for '{clean_filename}': {unk_err}")
+        db_document.status = "failed"
+        db_document.error_message = f"Extraction failed: {str(unk_err)}"
+
+    db.commit()
+    db.refresh(db_document)
+    return db_document
 
 
 @router.get(
