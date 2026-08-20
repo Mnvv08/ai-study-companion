@@ -1,98 +1,129 @@
 """
 app/services/vector_store.py
 ──────────────────────────────
-ChromaDB client interface for storing and retrieving document embeddings.
+ChromaDB client wrapper for storing and querying document embeddings.
 
-WHY ChromaDB?
-  - Open-source, fast, lightweight vector DB.
-  - Automatically handles cosine similarity / distance calculation between query and stored text chunks.
+Security & Multi-Tenancy:
+  Every chunk is tagged with `user_id` and `document_id` in its metadata.
+  All similarity queries strictly enforce filtering by BOTH `user_id` and `document_id`
+  to guarantee tenant data isolation.
 """
 
-import chromadb
-from chromadb.config import Settings as ChromaSettings
+import logging
 from typing import List, Dict, Any
+import chromadb
 from openai import OpenAI
 
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
+
 
 class VectorStoreService:
     def __init__(self):
-        # Connect to ChromaDB HTTP service or fallback to in-memory/local client
+        """Initializes ChromaDB client and OpenAI embeddings client."""
         try:
+            # Connect to ChromaDB HTTP container
             self.client = chromadb.HttpClient(
                 host=settings.CHROMA_HOST,
                 port=settings.CHROMA_PORT,
             )
-        except Exception:
-            # Fallback to local persistent client if HTTP container not ready
+            # Test connection
+            self.client.heartbeat()
+        except Exception as e:
+            logger.warning(f"ChromaDB HttpClient unavailable ({e}), falling back to PersistentClient")
             self.client = chromadb.PersistentClient(path="./chroma_db_data")
 
         self.openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        self.collection_name = "study_documents"
+
+    def _get_or_create_collection(self):
+        """Get or create the unified study_documents collection."""
+        return self.client.get_or_create_collection(
+            name=self.collection_name,
+            metadata={"hnsw:space": "cosine"},
+        )
 
     def _get_embedding(self, text: str) -> List[float]:
-        """Generate vector embedding for a string using OpenAI Embeddings API."""
-        response = self.openai_client.embeddings.create(
-            input=text,
-            model=settings.EMBEDDING_MODEL,
-        )
-        return response.data[0].embedding
+        """Generates embedding vector using OpenAI Embeddings API."""
+        try:
+            response = self.openai_client.embeddings.create(
+                input=text,
+                model=settings.EMBEDDING_MODEL,
+            )
+            return response.data[0].embedding
+        except Exception as err:
+            logger.error(f"OpenAI embedding generation failed: {err}")
+            raise RuntimeError(f"Embedding generation failed: {str(err)}")
 
-    def index_document(self, file_id: str, chunks: List[str]) -> int:
+    def add_document_chunks(
+        self, user_id: str, document_id: str, chunks: List[str]
+    ) -> int:
         """
-        Indexes text chunks of a file into a ChromaDB collection dedicated to `file_id`.
-
-        Returns:
-            int: Number of chunks indexed.
+        Embeds and stores text chunks for a document into ChromaDB.
+        Tags every chunk with user_id and document_id metadata for strict tenant isolation.
         """
         if not chunks:
             return 0
 
-        # Collection name per file_id (prefixed with file_)
-        collection_name = f"file_{file_id.replace('-', '_')}"
-        
-        # Get or create collection
-        collection = self.client.get_or_create_collection(
-            name=collection_name,
-            metadata={"file_id": file_id}
-        )
-
+        collection = self._get_or_create_collection()
         embeddings = []
         ids = []
         metadatas = []
+        clean_chunks = []
 
-        for i, chunk in enumerate(chunks):
-            vector = self._get_embedding(chunk)
+        for idx, chunk in enumerate(chunks):
+            text = chunk.strip()
+            if not text:
+                continue
+            
+            vector = self._get_embedding(text)
             embeddings.append(vector)
-            ids.append(f"{file_id}_chunk_{i}")
-            metadatas.append({"file_id": file_id, "chunk_index": i})
+            ids.append(f"{document_id}_chunk_{idx}")
+            metadatas.append({
+                "user_id": user_id,
+                "document_id": document_id,
+                "chunk_index": idx,
+            })
+            clean_chunks.append(text)
 
-        collection.add(
-            documents=chunks,
+        if not clean_chunks:
+            return 0
+
+        collection.upsert(
+            documents=clean_chunks,
             embeddings=embeddings,
             ids=ids,
             metadatas=metadatas,
         )
+        logger.info(f"Indexed {len(clean_chunks)} chunks for document {document_id}")
+        return len(clean_chunks)
 
-        return len(chunks)
-
-    def search_similar_chunks(self, file_id: str, query: str, top_k: int = 3) -> List[str]:
+    def search_similar_chunks(
+        self, user_id: str, document_id: str, query: str, top_k: int = 4
+    ) -> List[str]:
         """
-        Searches ChromaDB for the top-k chunks most semantically relevant to `query`.
+        Searches ChromaDB for top-k semantically similar chunks.
+        Strictly filters by BOTH user_id and document_id to prevent data leakage.
         """
-        collection_name = f"file_{file_id.replace('-', '_')}"
-        
-        try:
-            collection = self.client.get_collection(name=collection_name)
-        except Exception:
-            return []
-
+        collection = self._get_or_create_collection()
         query_embedding = self._get_embedding(query)
 
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-        )
+        try:
+            # Filter by both user_id and document_id
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                where={
+                    "$and": [
+                        {"user_id": {"$eq": user_id}},
+                        {"document_id": {"$eq": document_id}},
+                    ]
+                },
+            )
 
-        documents = results.get("documents", [[]])[0]
-        return documents
+            documents = results.get("documents", [[]])[0]
+            return [doc for doc in documents if doc]
+        except Exception as query_err:
+            logger.error(f"ChromaDB search failed: {query_err}")
+            return []

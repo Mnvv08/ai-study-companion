@@ -30,6 +30,8 @@ from app.schemas.file import (
 )
 
 from app.services.extraction import extract_text_from_pdf
+from app.services.chunker import TextChunkerService
+from app.services.vector_store import VectorStoreService
 
 logger = logging.getLogger(__name__)
 
@@ -144,13 +146,30 @@ async def upload_document(
             detail="Failed to record document metadata in database.",
         )
 
-    # ── 5. Synchronous Text Extraction (pdfplumber) ─────────────────
+    # ── 5. Synchronous Text Extraction & Vector Indexing ───────────
     try:
         extracted_text = extract_text_from_pdf(saved_file_path)
-        # Successfully extracted text
+        
+        # Chunk text (500 tokens / characters with overlap)
+        chunks = TextChunkerService.chunk_text(
+            extracted_text, chunk_size=500, chunk_overlap=50
+        )
+        
+        # Embed and store in ChromaDB with user_id and document_id metadata
+        try:
+            vector_service = VectorStoreService()
+            vector_service.add_document_chunks(
+                user_id=current_user.id,
+                document_id=db_document.id,
+                chunks=chunks,
+            )
+        except Exception as v_err:
+            logger.warning(f"Vector indexing warning for document '{clean_filename}': {v_err}")
+
+        # Successfully extracted and indexed
         db_document.status = "processed"
         db_document.error_message = None
-        logger.info(f"Successfully extracted {len(extracted_text)} characters from {clean_filename}")
+        logger.info(f"Successfully processed {clean_filename}: {len(chunks)} chunks indexed")
     except ValueError as extraction_err:
         logger.warning(f"Text extraction warning for '{clean_filename}': {extraction_err}")
         db_document.status = "failed"

@@ -56,6 +56,7 @@ app.include_router(files.router, prefix="/api/v1")
 app.include_router(notes.router, prefix="/api/v1")
 app.include_router(generation.router, prefix="/api/v1")
 app.include_router(rag.router, prefix="/api/v1")
+app.include_router(rag.router)  # Direct /qa/ask access
 
 
 @app.get("/", tags=["Root"])

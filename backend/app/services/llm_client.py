@@ -5,10 +5,13 @@ Wrapper for calling OpenAI LLM (gpt-4o-mini).
 """
 
 import json
+import logging
 from openai import OpenAI
 from typing import Dict, Any, List
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class LLMClientService:
@@ -139,16 +142,18 @@ class LLMClientService:
 
     def answer_question_with_context(self, question: str, context_chunks: List[str]) -> str:
         """Answers a user question based strictly on retrieved context chunks (RAG)."""
-        context_str = "\n\n---\n\n".join(context_chunks)
+        retrieved_chunks = "\n\n---\n\n".join(context_chunks)
+
         system_prompt = (
-            "You are a study assistant helping a student understand their course material.\n"
+            "You are a study assistant helping a student understand their uploaded course material.\n"
             "Rules:\n"
             "- Answer ONLY using the information in the provided context chunks.\n"
             "- If the answer is not present in the context, say: 'I couldn't find this in your uploaded material.' Do not guess or use outside knowledge.\n"
-            "- Keep answers clear, accurate, and exam-relevant."
+            "- Keep answers clear and exam-relevant, not overly long.\n"
+            "- If helpful, quote the relevant line from the context to support your answer."
         )
 
-        user_prompt = f"Context:\n{context_str}\n\nQuestion: {question}"
+        user_prompt = f'Context:\n"""\n{retrieved_chunks}\n"""\n\nQuestion: {question}'
 
         try:
             response = self.client.chat.completions.create(
@@ -159,6 +164,8 @@ class LLMClientService:
                 ],
                 temperature=0.2,
             )
-            return response.choices[0].message.content.strip()
+            content = response.choices[0].message.content
+            return content.strip() if content else "I couldn't find this in your uploaded material."
         except Exception as e:
+            logger.error(f"OpenAI ChatCompletion failure: {e}")
             raise RuntimeError(f"LLM Q&A generation failed: {str(e)}")

@@ -5,22 +5,39 @@ Pydantic schemas for RAG Q&A and Notes generation.
 """
 
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any
+from typing import List, Optional
 
 
 class AskQuestionRequest(BaseModel):
-    file_id: str
-    question: str = Field(..., min_length=3, max_length=500)
+    document_id: Optional[str] = None
+    file_id: Optional[str] = None
+    question: str = Field(..., min_length=2, max_length=1000)
+
+    @property
+    def target_document_id(self) -> str:
+        doc_id = self.document_id or self.file_id
+        if not doc_id:
+            raise ValueError("document_id (or file_id) is required.")
+        return doc_id
 
 
 class AskQuestionResponse(BaseModel):
+    document_id: str
     question: str
     answer: str
-    sources_used: List[str]
+    sources_used: List[str] = Field(default_factory=list)
 
 
 class GenerateNotesRequest(BaseModel):
-    file_id: str
+    document_id: Optional[str] = None
+    file_id: Optional[str] = None
+
+    @property
+    def target_document_id(self) -> str:
+        doc_id = self.document_id or self.file_id
+        if not doc_id:
+            raise ValueError("document_id (or file_id) is required.")
+        return doc_id
 
 
 class NoteSection(BaseModel):
@@ -34,7 +51,7 @@ class KeyTerm(BaseModel):
 
 
 class GenerateNotesResponse(BaseModel):
-    file_id: str
+    document_id: str
     title: str
     sections: List[NoteSection]
     key_terms: List[KeyTerm]
