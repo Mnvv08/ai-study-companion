@@ -1,0 +1,12 @@
+/* src/index.css
+   The THREE Tailwind directives inject all base, component, and utility styles.
+   Without these, Tailwind classes (like 'bg-blue-500') won't work. */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global base styles */
+body {
+  @apply bg-gray-950 text-white font-sans antialiased;
+}

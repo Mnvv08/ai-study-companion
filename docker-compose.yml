@@ -1,0 +1,88 @@
+# docker-compose.yml
+# ─────────────────────────────────────────────────────────────────
+# Defines all services for the AI Study Companion.
+# Run with:  docker compose up --build
+# Stop with: docker compose down
+# ─────────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+services:
+
+  # ── PostgreSQL Database ──────────────────────────────────────────
+  # Stores users, uploaded file metadata, quiz results, etc.
+  # We use the official lightweight postgres:15 image.
+  postgres:
+    image: postgres:15
+    container_name: study_companion_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"          # Expose to host so you can connect via pgAdmin/DBeaver
+    volumes:
+      - postgres_data:/var/lib/postgresql/data   # Persist data across restarts
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI Backend ──────────────────────────────────────────────
+  # Handles auth, file uploads, AI generation, RAG Q&A, quiz logic.
+  # 'depends_on' ensures postgres is healthy before backend starts.
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: study_companion_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env          # Loads environment variables from .env file
+    ports:
+      - "8000:8000"             # FastAPI runs on port 8000
+    volumes:
+      - ./backend:/app          # Mount source code for hot-reload in dev
+      - uploads_data:/app/uploads  # Persistent storage for uploaded files
+    depends_on:
+      postgres:
+        condition: service_healthy   # Wait for Postgres to be ready
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ── React + Vite Frontend ────────────────────────────────────────
+  # The student-facing UI. Runs Vite dev server in development.
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: study_companion_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"             # Vite default dev port
+    volumes:
+      - ./frontend:/app         # Mount source code for hot-reload
+      - /app/node_modules       # Anonymous volume to preserve node_modules inside container
+    environment:
+      - VITE_API_URL=http://localhost:8000   # Frontend uses this to talk to backend
+    depends_on:
+      - backend
+
+  # ── ChromaDB Vector Database ─────────────────────────────────────
+  # Stores text embeddings for RAG-based Q&A. Scaffolded now, used in Phase 1.
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: study_companion_chromadb
+    restart: unless-stopped
+    ports:
+      - "8001:8000"             # ChromaDB HTTP API on host port 8001
+    volumes:
+      - chroma_data:/chroma/chroma   # Persist vector data
+
+# ── Named Volumes ────────────────────────────────────────────────
+# Docker manages these; data persists even if containers are removed.
+volumes:
+  postgres_data:
+  uploads_data:
+  chroma_data:

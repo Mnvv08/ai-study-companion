@@ -1,0 +1,29 @@
+# ── NEVER commit these ────────────────────────────────────────────
+backend/.env
+frontend/.env
+*.env
+
+# ── Python ────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+.pytest_cache/
+
+# ── Node ──────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+
+# ── Uploads (user files — not for version control) ───────────────
+backend/uploads/
+
+# ── OS ────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Editor ────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp

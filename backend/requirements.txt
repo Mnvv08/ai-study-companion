@@ -1,0 +1,28 @@
+# ─────────────────────────────────────────────────────────────────
+# Phase 0 dependencies only.
+# Phase 1 will add: openai, chromadb, pymupdf, python-pptx, etc.
+# ─────────────────────────────────────────────────────────────────
+
+# ── Web Framework ─────────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.6    # ASGI server; [standard] adds websocket support
+
+# ── Configuration ─────────────────────────────────────────────────
+pydantic-settings==2.4.0     # Reads .env into typed Python settings class
+pydantic[email]==2.9.2       # Data validation; [email] adds email validator
+
+# ── Database ──────────────────────────────────────────────────────
+sqlalchemy==2.0.36           # ORM — maps Python classes to DB tables
+alembic==1.13.3              # DB migrations — track schema changes over time
+psycopg2-binary==2.9.9       # PostgreSQL driver for Python
+
+# ── Auth (scaffolded for Phase 1) ─────────────────────────────────
+python-jose[cryptography]==3.3.0   # JWT creation and verification
+passlib[bcrypt]==1.7.4             # Password hashing
+
+# ── File Upload support ───────────────────────────────────────────
+python-multipart==0.0.12     # Required for FastAPI to handle file uploads
+
+# ── Dev/Testing ───────────────────────────────────────────────────
+pytest==8.3.3
+httpx==0.27.2                # Async HTTP client — used to test FastAPI routes
