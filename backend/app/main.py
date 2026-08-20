@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api.v1 import health, auth, files, notes, rag
+from app.api.v1 import health, auth, files, notes, rag, generation
 from app.db.base import Base
 from app.db.session import engine
 
@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.APP_NAME,
     description="AI-powered study platform for uploading materials and generating study content.",
-    version="0.1.0",
+    version="0.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
@@ -52,6 +52,7 @@ app.include_router(health.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(files.router, prefix="/api/v1")
 app.include_router(notes.router, prefix="/api/v1")
+app.include_router(generation.router, prefix="/api/v1")
 app.include_router(rag.router, prefix="/api/v1")
 
 
