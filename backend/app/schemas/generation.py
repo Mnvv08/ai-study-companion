@@ -1,61 +1,87 @@
 """
 app/schemas/generation.py
 ──────────────────────────
-Pydantic request and response schemas for Flashcards, MCQs, and Short-Answer Questions.
+Pydantic schemas for Flashcards, MCQs, and Short-Answer Questions generation.
 """
 
+from typing import List, Optional
 from pydantic import BaseModel, Field
-from typing import List
 
 
 # ── Flashcards ───────────────────────────────────────────────────
 class FlashcardItem(BaseModel):
-    front: str = Field(..., description="Question, prompt, or term on the front of the flashcard")
-    back: str = Field(..., description="Answer, explanation, or definition on the back")
+    front: str = Field(..., description="Concise question or prompt on the front")
+    back: str = Field(..., description="Concise, correct answer or explanation on the back")
+    topic: str = Field(default="General", description="Subject topic category for future weak-area tracking")
 
 
 class GenerateFlashcardsRequest(BaseModel):
-    file_id: str
-    count: int = Field(default=10, ge=3, le=20, description="Number of flashcards to generate (3-20)")
+    document_id: Optional[str] = None
+    file_id: Optional[str] = None
+
+    @property
+    def target_document_id(self) -> str:
+        doc_id = self.document_id or self.file_id
+        if not doc_id:
+            raise ValueError("document_id (or file_id) is required.")
+        return doc_id
 
 
 class GenerateFlashcardsResponse(BaseModel):
-    file_id: str
+    document_id: str
     flashcards: List[FlashcardItem]
 
 
-# ── MCQs ─────────────────────────────────────────────────────────
+# ── MCQs (Phase 2 Step 2) ─────────────────────────────────────────
 class MCQItem(BaseModel):
     id: int
     question: str
     options: List[str] = Field(..., min_length=4, max_length=4, description="Exactly 4 multiple choice options")
-    correct_answer: str = Field(..., description="Must exactly match one of the 4 options")
-    explanation: str = Field(..., description="Detailed explanation of why this answer is correct")
+    correct_answer: str = Field(..., description="Must match one of the options exactly")
+    explanation: str = Field(..., description="Explanation of why this option is correct")
+    topic: Optional[str] = Field(default="General", description="Topic category for analytics")
 
 
 class GenerateMCQRequest(BaseModel):
-    file_id: str
-    count: int = Field(default=5, ge=3, le=15, description="Number of MCQs to generate (3-15)")
+    document_id: Optional[str] = None
+    file_id: Optional[str] = None
+    count: int = Field(default=5, ge=1, le=20)
+
+    @property
+    def target_document_id(self) -> str:
+        doc_id = self.document_id or self.file_id
+        if not doc_id:
+            raise ValueError("document_id (or file_id) is required.")
+        return doc_id
 
 
 class GenerateMCQResponse(BaseModel):
-    file_id: str
+    document_id: str
     mcqs: List[MCQItem]
 
 
-# ── Short-Answer Questions ────────────────────────────────────────
+# ── Short-Answer Questions (Phase 2 Step 3) ───────────────────────
 class ShortQuestionItem(BaseModel):
     id: int
     question: str
     sample_answer: str
-    key_points: List[str] = Field(..., description="Key bullet points required to get full marks on this question")
+    key_points: List[str]
+    topic: Optional[str] = Field(default="General", description="Topic category for analytics")
 
 
 class GenerateShortQRequest(BaseModel):
-    file_id: str
-    count: int = Field(default=5, ge=2, le=10, description="Number of short-answer questions to generate (2-10)")
+    document_id: Optional[str] = None
+    file_id: Optional[str] = None
+    count: int = Field(default=5, ge=1, le=15)
+
+    @property
+    def target_document_id(self) -> str:
+        doc_id = self.document_id or self.file_id
+        if not doc_id:
+            raise ValueError("document_id (or file_id) is required.")
+        return doc_id
 
 
 class GenerateShortQResponse(BaseModel):
-    file_id: str
+    document_id: str
     questions: List[ShortQuestionItem]

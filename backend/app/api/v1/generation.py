@@ -2,15 +2,22 @@
 app/api/v1/generation.py
 ────────────────────────
 API router for AI generation features: Flashcards, MCQs, and Short-Answer Questions.
+
+Workflow for Flashcards:
+  1. Authenticate user and verify document ownership (404 on mismatch).
+  2. Retrieve all document chunks from ChromaDB (or fallback to extracted text).
+  3. Call LLM with exact system prompt to extract natural, testable active-recall cards with topic tags.
+  4. Defensively parse and return JSON without persisting to DB yet.
 """
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.core.security import get_current_user
 from app.models.user import User
-from app.models.file import UploadedFile
+from app.models.file import Document
 from app.schemas.generation import (
     GenerateFlashcardsRequest,
     GenerateFlashcardsResponse,
@@ -19,62 +26,119 @@ from app.schemas.generation import (
     GenerateShortQRequest,
     GenerateShortQResponse,
 )
+from app.services.vector_store import VectorStoreService
 from app.services.llm_client import LLMClientService
 
-router = APIRouter(prefix="/generate", tags=["AI Generation"])
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["AI Generation"])
 
 
-def _get_user_file_or_404(file_id: str, user_id: str, db: Session) -> UploadedFile:
-    """Helper to verify file existence and user ownership."""
-    db_file = (
-        db.query(UploadedFile)
-        .filter(UploadedFile.id == file_id, UploadedFile.user_id == user_id)
+def _get_user_document_content(doc_id: str, user_id: str, db: Session) -> tuple[Document, str]:
+    """Helper to verify document ownership and pull content from ChromaDB or text storage."""
+    db_doc = (
+        db.query(Document)
+        .filter(Document.id == doc_id, Document.user_id == user_id)
         .first()
     )
-    if not db_file:
-        raise HTTPException(status_code=404, detail="File not found")
-    if not db_file.extracted_text:
-        raise HTTPException(status_code=400, detail="File has no extracted text available")
-    return db_file
+    if not db_doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    # Pull chunks from ChromaDB
+    vector_service = VectorStoreService()
+    chunks = vector_service.get_document_chunks(user_id=user_id, document_id=db_doc.id)
+
+    if chunks:
+        content = "\n\n".join(chunks)
+    elif db_doc.extracted_text:
+        content = db_doc.extracted_text
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Document contains no readable text for content generation.",
+        )
+
+    return db_doc, content
 
 
-@router.post("/flashcards", response_model=GenerateFlashcardsResponse)
+@router.post(
+    "/flashcards/generate",
+    response_model=GenerateFlashcardsResponse,
+    summary="Generate active-recall flashcards from an uploaded document",
+)
+@router.post(
+    "/generate/flashcards",
+    response_model=GenerateFlashcardsResponse,
+    include_in_schema=False,
+)
 def generate_flashcards(
     request: GenerateFlashcardsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Generate active-recall flashcards from an uploaded document."""
-    db_file = _get_user_file_or_404(request.file_id, current_user.id, db)
+    """
+    Generate concept-based active-recall flashcards from a study document.
+
+    Rules:
+      - Strictly grounded in document material.
+      - Returns { front, back, topic } items.
+      - Automatically decides card quantity based on content density.
+    """
+    try:
+        doc_id = request.target_document_id
+    except ValueError as val_err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(val_err))
+
+    db_doc, content = _get_user_document_content(doc_id, current_user.id, db)
     llm_service = LLMClientService()
 
     try:
-        cards = llm_service.generate_flashcards(
-            text_content=db_file.extracted_text, count=request.count
+        cards = llm_service.generate_flashcards(text_content=content)
+        return GenerateFlashcardsResponse(document_id=db_doc.id, flashcards=cards)
+    except RuntimeError as llm_err:
+        logger.error(f"LLM flashcard error for document {db_doc.id}: {llm_err}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI service error during flashcard generation: {str(llm_err)}",
         )
-        return GenerateFlashcardsResponse(file_id=db_file.id, flashcards=cards)
     except Exception as e:
+        logger.error(f"Unexpected flashcard generation error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate flashcards: {str(e)}",
+            detail="Failed to generate flashcards.",
         )
 
 
-@router.post("/mcq", response_model=GenerateMCQResponse)
+@router.post(
+    "/mcq/generate",
+    response_model=GenerateMCQResponse,
+    summary="Generate MCQs with options and explanations",
+)
+@router.post(
+    "/generate/mcq",
+    response_model=GenerateMCQResponse,
+    include_in_schema=False,
+)
 def generate_mcqs(
     request: GenerateMCQRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Generate Multiple Choice Questions (MCQs) with options and explanations."""
-    db_file = _get_user_file_or_404(request.file_id, current_user.id, db)
+    """Generate Multiple Choice Questions (MCQs) with 4 options and detailed explanations."""
+    try:
+        doc_id = request.target_document_id
+    except ValueError as val_err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(val_err))
+
+    db_doc, content = _get_user_document_content(doc_id, current_user.id, db)
     llm_service = LLMClientService()
 
     try:
-        mcqs = llm_service.generate_mcqs(
-            text_content=db_file.extracted_text, count=request.count
-        )
-        return GenerateMCQResponse(file_id=db_file.id, mcqs=mcqs)
+        mcqs = llm_service.generate_mcqs(text_content=content, count=request.count)
+        return GenerateMCQResponse(document_id=db_doc.id, mcqs=mcqs)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -82,21 +146,33 @@ def generate_mcqs(
         )
 
 
-@router.post("/shortq", response_model=GenerateShortQResponse)
+@router.post(
+    "/shortq/generate",
+    response_model=GenerateShortQResponse,
+    summary="Generate short-answer exam questions",
+)
+@router.post(
+    "/generate/shortq",
+    response_model=GenerateShortQResponse,
+    include_in_schema=False,
+)
 def generate_short_questions(
     request: GenerateShortQRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Generate short-answer conceptual exam questions with model answers and evaluation points."""
-    db_file = _get_user_file_or_404(request.file_id, current_user.id, db)
+    try:
+        doc_id = request.target_document_id
+    except ValueError as val_err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(val_err))
+
+    db_doc, content = _get_user_document_content(doc_id, current_user.id, db)
     llm_service = LLMClientService()
 
     try:
-        questions = llm_service.generate_short_questions(
-            text_content=db_file.extracted_text, count=request.count
-        )
-        return GenerateShortQResponse(file_id=db_file.id, questions=questions)
+        questions = llm_service.generate_short_questions(text_content=content, count=request.count)
+        return GenerateShortQResponse(document_id=db_doc.id, questions=questions)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

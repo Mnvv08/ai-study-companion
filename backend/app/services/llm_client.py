@@ -80,19 +80,24 @@ class LLMClientService:
             logger.error(f"Study notes generation failed: {e}")
             raise RuntimeError(f"LLM study notes generation failed: {str(e)}")
 
-    def generate_flashcards(self, text_content: str, count: int = 10) -> List[Dict[str, str]]:
-        """Generates active-recall flashcards (Front/Back) from study content."""
+    def generate_flashcards(self, text_content: str) -> List[Dict[str, Any]]:
+        """Generates active-recall flashcards from study material with topic classification."""
         system_prompt = (
-            "You are an expert tutor creating study flashcards for active recall.\n"
+            "You are a study assistant that creates flashcards from study material.\n"
             "Rules:\n"
-            "- Base flashcards strictly on the provided study material.\n"
-            "- 'front' should be a concise question or concept.\n"
-            "- 'back' should be a clear, accurate answer or explanation.\n"
-            "- Return JSON in this exact structure:\n"
-            '{"flashcards": [{"front": "string", "back": "string"}]}'
+            "- Use ONLY the provided content. Do not add outside facts.\n"
+            "- Each flashcard should test ONE clear concept — a term, a definition, a fact, or\n"
+            "  a cause/effect relationship.\n"
+            "- The 'front' should be a concise question or prompt. The 'back' should be a\n"
+            "  concise, correct answer.\n"
+            "- Decide the number of flashcards based on how much distinct, testable content is\n"
+            "  in the material — do not pad with trivial or repetitive cards, and do not skip\n"
+            "  genuinely important concepts to hit an arbitrary count.\n"
+            "- Return the output in the following JSON structure exactly:\n"
+            '{ "flashcards": [{"front": "string", "back": "string", "topic": "string"}] }'
         )
 
-        user_prompt = f"Generate exactly {count} flashcards from this text:\n\n{text_content[:15000]}"
+        user_prompt = f'Study Material:\n"""\n{text_content[:20000]}\n"""'
 
         try:
             response = self.client.chat.completions.create(
@@ -102,12 +107,28 @@ class LLMClientService:
                     {"role": "user", "content": user_prompt},
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.4,
+                temperature=0.3,
             )
-            result = json.loads(response.choices[0].message.content)
-            return result.get("flashcards", [])
+            raw_text = response.choices[0].message.content or "{}"
+            data = extract_and_parse_json(raw_text)
+
+            if not isinstance(data, dict):
+                raise ValueError("Parsed JSON root is not an object.")
+
+            flashcards = data.get("flashcards", [])
+            cleaned_cards = []
+            for item in flashcards:
+                if isinstance(item, dict) and "front" in item and "back" in item:
+                    cleaned_cards.append({
+                        "front": str(item.get("front", "")).strip(),
+                        "back": str(item.get("back", "")).strip(),
+                        "topic": str(item.get("topic", "General")).strip() or "General",
+                    })
+
+            return cleaned_cards
         except Exception as e:
-            raise RuntimeError(f"LLM flashcards generation failed: {str(e)}")
+            logger.error(f"Flashcard generation failed: {e}")
+            raise RuntimeError(f"LLM flashcard generation failed: {str(e)}")
 
     def generate_mcqs(self, text_content: str, count: int = 5) -> List[Dict[str, Any]]:
         """Generates multiple choice questions with 4 options and explanations."""
