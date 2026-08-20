@@ -1,9 +1,4 @@
-"""
-app/services/llm_client.py
-──────────────────────────
-Wrapper for calling OpenAI LLM (gpt-4o-mini).
-"""
-
+import re
 import json
 import logging
 from openai import OpenAI
@@ -14,6 +9,29 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def extract_and_parse_json(content: str) -> Dict[str, Any]:
+    """
+    Defensively parses JSON from LLM output.
+    Strips markdown code blocks, extracts {...} boundaries, and parses cleanly.
+    """
+    cleaned = content.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+        cleaned = cleaned.strip()
+
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError as err:
+                raise ValueError(f"Extracted JSON block is malformed: {err}")
+        raise ValueError(f"No valid JSON object found in response: {cleaned[:100]}")
+
+
 class LLMClientService:
     def __init__(self):
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -22,21 +40,20 @@ class LLMClientService:
     def generate_study_notes(self, text_content: str) -> Dict[str, Any]:
         """Generates structured, exam-ready study notes in JSON format."""
         system_prompt = (
-            "You are a study assistant that converts raw study material into structured, exam-ready notes.\n"
+            "You are a study assistant that converts raw study material into structured,\n"
+            "exam-ready notes.\n"
             "Rules:\n"
             "- Use ONLY the provided content. Do not add outside facts.\n"
             "- Organize into clear sections with headings.\n"
-            "- Use bullet points for details.\n"
-            "- If the content includes definitions, list them under 'key_terms'.\n"
-            "- Return valid JSON matching this schema exactly:\n"
-            "{\n"
-            '  "title": "string",\n'
-            '  "sections": [{"heading": "string", "points": ["string"]}],\n'
-            '  "key_terms": [{"term": "string", "definition": "string"}]\n'
-            "}"
+            "- Use bullet points for details, not long paragraphs.\n"
+            "- Bold key terms.\n"
+            "- If the content includes definitions, list them separately under 'Key Terms'.\n"
+            "- Return the output in the following JSON structure exactly:\n"
+            '{ "title": "string", "sections": [{"heading": "string", "points": ["string"]}],\n'
+            '  "key_terms": [{"term": "string", "definition": "string"}] }'
         )
 
-        user_prompt = f"Study Material:\n\n{text_content[:15000]}"
+        user_prompt = f'Study Material:\n"""\n{text_content[:20000]}\n"""'
 
         try:
             response = self.client.chat.completions.create(
@@ -48,8 +65,19 @@ class LLMClientService:
                 response_format={"type": "json_object"},
                 temperature=0.3,
             )
-            return json.loads(response.choices[0].message.content)
+            raw_text = response.choices[0].message.content or "{}"
+            data = extract_and_parse_json(raw_text)
+
+            if not isinstance(data, dict):
+                raise ValueError("Parsed JSON root is not an object.")
+
+            return {
+                "title": str(data.get("title", "Study Notes")),
+                "sections": list(data.get("sections", [])),
+                "key_terms": list(data.get("key_terms", [])),
+            }
         except Exception as e:
+            logger.error(f"Study notes generation failed: {e}")
             raise RuntimeError(f"LLM study notes generation failed: {str(e)}")
 
     def generate_flashcards(self, text_content: str, count: int = 10) -> List[Dict[str, str]]:

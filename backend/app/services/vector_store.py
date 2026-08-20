@@ -127,3 +127,37 @@ class VectorStoreService:
         except Exception as query_err:
             logger.error(f"ChromaDB search failed: {query_err}")
             return []
+
+    def get_document_chunks(
+        self, user_id: str, document_id: str, max_chunks: int = 50
+    ) -> List[str]:
+        """
+        Retrieves all stored text chunks for a document belonging to user_id.
+        Sorted by chunk_index to reconstruct natural document reading flow.
+        """
+        collection = self._get_or_create_collection()
+        try:
+            results = collection.get(
+                where={
+                    "$and": [
+                        {"user_id": {"$eq": user_id}},
+                        {"document_id": {"$eq": document_id}},
+                    ]
+                },
+                include=["documents", "metadatas"],
+                limit=max_chunks,
+            )
+            documents = results.get("documents", [])
+            metadatas = results.get("metadatas", [])
+            if not documents:
+                return []
+
+            # Re-order chunks by chunk_index
+            combined = sorted(
+                zip(documents, metadatas),
+                key=lambda x: x[1].get("chunk_index", 0) if x[1] else 0,
+            )
+            return [doc for doc, _ in combined if doc]
+        except Exception as get_err:
+            logger.error(f"Failed to retrieve chunks for document {document_id}: {get_err}")
+            return []

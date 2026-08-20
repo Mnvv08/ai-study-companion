@@ -54,6 +54,7 @@ app.include_router(documents.router, prefix="/api/v1")
 app.include_router(documents.router)  # Also expose directly at /documents/upload etc.
 app.include_router(files.router, prefix="/api/v1")
 app.include_router(notes.router, prefix="/api/v1")
+app.include_router(notes.router)  # Direct /notes/generate access
 app.include_router(generation.router, prefix="/api/v1")
 app.include_router(rag.router, prefix="/api/v1")
 app.include_router(rag.router)  # Direct /qa/ask access
