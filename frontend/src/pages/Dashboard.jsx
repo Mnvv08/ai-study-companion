@@ -16,7 +16,7 @@ const Dashboard = () => {
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
 
-  // Right Panel tab selection: 'chat' | 'notes' | 'flashcards'
+  // Right Panel tab selection: 'chat' | 'notes' | 'flashcards' | 'mcqs'
   const [activeTab, setActiveTab] = useState('chat');
 
   // Q&A Chat states
@@ -38,6 +38,15 @@ const Dashboard = () => {
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [topicFilter, setTopicFilter] = useState('All');
+
+  // MCQ states
+  const [sessionMCQs, setSessionMCQs] = useState({}); // docId -> { quiz_id, questions: [] }
+  const [mcqsLoading, setMcqsLoading] = useState(false);
+  const [mcqsError, setMcqsError] = useState('');
+  const [currentMcqIndex, setCurrentMcqIndex] = useState(0);
+  const [mcqAnswers, setMcqAnswers] = useState({}); // questionId -> optionIndex (0-3)
+  const [quizResult, setQuizResult] = useState(null);
+  const [submittingQuiz, setSubmittingQuiz] = useState(false);
 
   // 1. Fetch documents list on mount
   const fetchDocuments = async () => {
@@ -94,9 +103,13 @@ const Dashboard = () => {
     setQuestion('');
     setNotesError('');
     setFlashcardsError('');
+    setMcqsError('');
     setCurrentCardIndex(0);
+    setCurrentMcqIndex(0);
     setFlipped(false);
     setTopicFilter('All');
+    setMcqAnswers({});
+    setQuizResult(null);
     setActiveTab('chat'); // default to chat on document change
   }, [selectedDocId]);
 
@@ -261,9 +274,72 @@ const Dashboard = () => {
     }
   };
 
+  // 8. Handle MCQ Generation & Quiz Submission
+  const triggerMCQGeneration = async (force = false) => {
+    if (!selectedDocId) return;
+    setMcqsLoading(true);
+    setMcqsError('');
+    setCurrentMcqIndex(0);
+    setMcqAnswers({});
+    setQuizResult(null);
+
+    try {
+      const response = await apiClient.post('/mcqs/generate', {
+        document_id: selectedDocId,
+        force_regenerate: force,
+      });
+
+      setSessionMCQs((prev) => ({
+        ...prev,
+        [selectedDocId]: {
+          quiz_id: response.data.quiz_id,
+          questions: response.data.questions,
+        },
+      }));
+    } catch (err) {
+      console.error(err);
+      setMcqsError(
+        err.response?.data?.detail || 'Failed to generate MCQ practice quiz. Please retry.'
+      );
+    } finally {
+      setMcqsLoading(false);
+    }
+  };
+
+  const handleQuizSubmit = async () => {
+    const activeQuiz = sessionMCQs[selectedDocId];
+    if (!selectedDocId || !activeQuiz) return;
+
+    setSubmittingQuiz(true);
+    setMcqsError('');
+
+    const formattedAnswers = activeQuiz.questions.map((q) => {
+      const selection = mcqAnswers[q.id];
+      return {
+        question_id: q.id,
+        student_answer: selection !== undefined ? String(selection) : '',
+      };
+    });
+
+    try {
+      const response = await apiClient.post(`/quizzes/${activeQuiz.quiz_id}/submit`, {
+        answers: formattedAnswers,
+      });
+      setQuizResult(response.data);
+    } catch (err) {
+      console.error(err);
+      setMcqsError(
+        err.response?.data?.detail || 'Failed to submit quiz results. Please try again.'
+      );
+    } finally {
+      setSubmittingQuiz(false);
+    }
+  };
+
   // Caching getters
   const currentNotes = sessionNotes[selectedDocId];
   const allFlashcards = sessionFlashcards[selectedDocId] || [];
+  const activeQuiz = sessionMCQs[selectedDocId];
 
   // Filter flashcards by topic dropdown
   const uniqueTopics = ['All', ...new Set(allFlashcards.map((c) => c.topic))];
@@ -433,13 +509,13 @@ const Dashboard = () => {
           </section>
         </div>
 
-        {/* Right Column (Q&A / Notes / Flashcards Tabs Panel) - 7 Cols */}
+        {/* Right Column (Q&A / Notes / Flashcards / MCQ Tabs Panel) - 7 Cols */}
         <div className="lg:col-span-7 bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden flex flex-col min-h-[450px]">
           
           {/* Header & Tabs */}
           <div className="bg-gray-50 border-b border-gray-100 p-4 flex-shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <div className="flex items-center space-x-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={() => setActiveTab('chat')}
                   className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
@@ -470,6 +546,16 @@ const Dashboard = () => {
                 >
                   Flashcards
                 </button>
+                <button
+                  onClick={() => setActiveTab('mcqs')}
+                  className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
+                    activeTab === 'mcqs'
+                      ? 'border-indigo-600 text-indigo-700'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  MCQ Quiz
+                </button>
               </div>
               {selectedDocId && (
                 <p className="text-2xs text-gray-500 mt-1 truncate max-w-sm">
@@ -495,7 +581,7 @@ const Dashboard = () => {
               </div>
               <h3 className="text-base font-bold text-gray-900">No Document Selected</h3>
               <p className="text-sm text-gray-500 mt-2 max-w-sm leading-relaxed">
-                Select a processed document on the left to start asking questions, generate structured study notes, or practice active recall flashcards.
+                Select a processed document on the left to start asking questions, generate study notes, practice flashcards, or take MCQ tests.
               </p>
             </div>
           ) : activeTab === 'chat' ? (
@@ -514,7 +600,7 @@ const Dashboard = () => {
                   return (
                     <div key={idx} className="space-y-2">
                       <div className="flex justify-end">
-                        <div className="bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-md text-sm font-medium shadow-sm">
+                        <div className="bg-indigo-650 bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-md text-sm font-medium shadow-sm">
                           {chat.question}
                         </div>
                       </div>
@@ -682,7 +768,7 @@ const Dashboard = () => {
                 </div>
               )}
             </div>
-          ) : (
+          ) : activeTab === 'flashcards' ? (
             /* TAB 3: Flashcards Interface */
             <div className="flex-grow flex flex-col overflow-hidden bg-gray-50/30">
               {allFlashcards.length === 0 && !flashcardsLoading && (
@@ -720,8 +806,6 @@ const Dashboard = () => {
 
               {allFlashcards.length > 0 && !flashcardsLoading && (
                 <div className="flex-grow flex flex-col p-6 justify-between overflow-y-auto">
-                  
-                  {/* Topic Filter Dropdown & Regenerate */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                     <div className="flex items-center space-x-2">
                       <label htmlFor="topic-select" className="text-xs font-semibold text-gray-600">
@@ -761,8 +845,6 @@ const Dashboard = () => {
                     </div>
                   ) : (
                     <div className="flex-grow flex flex-col justify-center items-center py-4 space-y-6">
-                      
-                      {/* Active Recall Card */}
                       <div
                         onClick={() => setFlipped(!flipped)}
                         className={`w-full max-w-md min-h-[180px] flex flex-col justify-between p-6 rounded-2xl border cursor-pointer select-none transition-all shadow-md ${
@@ -795,27 +877,285 @@ const Dashboard = () => {
                         </div>
                       </div>
 
-                      {/* Card Deck Progress Bar */}
                       <div className="text-xs font-semibold text-gray-500">
                         Card {currentCardIndex + 1} of {filteredFlashcards.length}
                       </div>
 
-                      {/* Navigation Controls */}
                       <div className="flex items-center space-x-4">
                         <button
                           onClick={prevCard}
                           disabled={currentCardIndex === 0}
-                          className="rounded-lg border border-gray-350 border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
+                          className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
                         >
                           ◀ Prev
                         </button>
                         <button
                           onClick={nextCard}
                           disabled={currentCardIndex === filteredFlashcards.length - 1}
-                          className="rounded-lg border border-gray-350 border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
+                          className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
                         >
                           Next ▶
                         </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* TAB 4: MCQ Quiz Interface */
+            <div className="flex-grow flex flex-col overflow-hidden bg-gray-50/30">
+              
+              {!activeQuiz && !mcqsLoading && (
+                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
+                  <h3 className="text-base font-bold text-gray-900">Practice Quiz Not Generated</h3>
+                  <p className="text-xs text-gray-500 mt-2 max-w-xs leading-relaxed">
+                    Test your understanding with a dynamically generated multiple-choice question quiz.
+                  </p>
+
+                  {mcqsError && (
+                    <div className="mt-4 max-w-sm rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
+                      {mcqsError}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => triggerMCQGeneration(false)}
+                    className="mt-5 rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md transition"
+                  >
+                    Generate MCQ Quiz
+                  </button>
+                </div>
+              )}
+
+              {mcqsLoading && (
+                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
+                  <svg className="animate-spin h-10 w-10 text-indigo-600 mb-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  <h4 className="text-sm font-bold text-gray-900">Formulating Practice Quiz...</h4>
+                  <p className="text-2xs text-gray-500 mt-1">Creating custom single-answer multiple-choice questions...</p>
+                </div>
+              )}
+
+              {activeQuiz && !mcqsLoading && (
+                <div className="flex-grow flex flex-col p-6 justify-between overflow-y-auto">
+                  
+                  {/* Control Subheader */}
+                  <div className="bg-white border rounded-xl p-3 flex justify-between items-center flex-shrink-0 text-xs shadow-2xs mb-4">
+                    <span className="font-semibold text-gray-800">
+                      Quiz Mode: Practice MCQ Test
+                    </span>
+                    <button
+                      onClick={() => triggerMCQGeneration(true)}
+                      className="text-2xs text-indigo-600 hover:text-indigo-850 font-bold hover:underline"
+                    >
+                      Regenerate Quiz
+                    </button>
+                  </div>
+
+                  {mcqsError && (
+                    <div className="mb-4 rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
+                      ⚠️ {mcqsError}
+                    </div>
+                  )}
+
+                  {/* Quiz Taking / Results Rendering */}
+                  {!quizResult ? (
+                    /* QUIZ STATE: Taking the test */
+                    <div className="flex-grow flex flex-col justify-between">
+                      {activeQuiz.questions.length === 0 ? (
+                        <div className="text-center py-12 text-gray-500 text-xs italic">
+                          No questions generated for this document.
+                        </div>
+                      ) : (
+                        <div className="space-y-6">
+                          
+                          {/* Active Question details */}
+                          {(() => {
+                            const q = activeQuiz.questions[currentMcqIndex];
+                            const selectedOptionIdx = mcqAnswers[q.id];
+
+                            return (
+                              <div className="space-y-4">
+                                <div className="flex justify-between items-center text-3xs font-bold uppercase tracking-wider text-gray-400">
+                                  <span>Concept: {q.topic}</span>
+                                  <span>Question {currentMcqIndex + 1} of {activeQuiz.questions.length}</span>
+                                </div>
+                                <h3 className="text-sm md:text-base font-bold text-gray-900 leading-normal">
+                                  {q.question}
+                                </h3>
+
+                                <div className="space-y-2.5 pt-2">
+                                  {q.options.map((opt, oIdx) => {
+                                    const isChosen = selectedOptionIdx === oIdx;
+                                    return (
+                                      <button
+                                        key={oIdx}
+                                        onClick={() =>
+                                          setMcqAnswers((prev) => ({ ...prev, [q.id]: oIdx }))
+                                        }
+                                        className={`w-full text-left px-4 py-3 rounded-xl border text-xs md:text-sm font-semibold transition ${
+                                          isChosen
+                                            ? 'bg-indigo-50 border-indigo-400 text-indigo-900 ring-2 ring-indigo-500/10'
+                                            : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'
+                                        }`}
+                                      >
+                                        <div className="flex items-center space-x-3">
+                                          <div
+                                            className={`h-4 w-4 rounded-full border flex items-center justify-center flex-shrink-0 ${
+                                              isChosen ? 'border-indigo-600 bg-indigo-600' : 'border-gray-300'
+                                            }`}
+                                          >
+                                            {isChosen && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
+                                          </div>
+                                          <span>{opt}</span>
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Navigation & Submit buttons */}
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-100">
+                            <div className="flex items-center space-x-3">
+                              <button
+                                onClick={() => setCurrentMcqIndex((prev) => Math.max(prev - 1, 0))}
+                                disabled={currentMcqIndex === 0}
+                                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
+                              >
+                                ◀ Previous
+                              </button>
+                              <button
+                                onClick={() =>
+                                  setCurrentMcqIndex((prev) =>
+                                    Math.min(prev + 1, activeQuiz.questions.length - 1)
+                                  )
+                                }
+                                disabled={currentMcqIndex === activeQuiz.questions.length - 1}
+                                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
+                              >
+                                Next ▶
+                              </button>
+                            </div>
+
+                            <button
+                              onClick={handleQuizSubmit}
+                              disabled={submittingQuiz}
+                              className="w-full sm:w-auto rounded-lg bg-indigo-600 text-white px-6 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md disabled:opacity-50 transition"
+                            >
+                              {submittingQuiz ? 'Submitting...' : 'Submit Quiz'}
+                            </button>
+                          </div>
+
+                          <p className="text-3xs text-gray-400 text-center">
+                            Note: You can submit the quiz even if some questions are left unanswered. 
+                            Unanswered questions will simply be marked incorrect.
+                          </p>
+
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* GRADED STATE: Results review page */
+                    <div className="space-y-6">
+                      
+                      {/* Score Card Banner */}
+                      <div className="bg-indigo-650 bg-indigo-600 text-white rounded-2xl p-6 text-center shadow-md relative overflow-hidden">
+                        <div className="absolute -top-12 -left-12 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
+                        <div className="relative">
+                          <h3 className="text-xs uppercase tracking-widest font-semibold text-indigo-200">
+                            Quiz Completed
+                          </h3>
+                          <div className="text-3xl md:text-4xl font-black mt-1">
+                            {Math.round(quizResult.score * 100)}%
+                          </div>
+                          <p className="text-xs text-indigo-150 mt-1">
+                            Score: <strong>{quizResult.correct_count}</strong> / {quizResult.questions_count} correct
+                          </p>
+                          <button
+                            onClick={() => triggerMCQGeneration(true)}
+                            className="mt-4 inline-flex items-center rounded-lg bg-white/20 hover:bg-white/30 text-white px-4 py-1.5 text-xs font-bold transition"
+                          >
+                            Retake New Quiz
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Detailed Question Review List */}
+                      <div className="space-y-4">
+                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                          Review Answers
+                        </h4>
+
+                        <div className="space-y-3">
+                          {quizResult.feedback.map((feed, fIdx) => {
+                            const originalQ = activeQuiz.questions.find((q) => q.id === feed.question_id);
+                            const studentAnsIdx = feed.student_answer ? parseInt(feed.student_answer) : null;
+                            const correctAnsIdx = parseInt(feed.correct_answer);
+
+                            return (
+                              <div
+                                key={feed.question_id}
+                                className={`rounded-xl border p-4 text-left shadow-2xs ${
+                                  feed.is_correct
+                                    ? 'bg-green-50/20 border-green-200'
+                                    : 'bg-red-50/20 border-red-200'
+                                }`}
+                              >
+                                <div className="flex justify-between items-center text-3xs font-bold uppercase tracking-wider mb-2">
+                                  <span className="text-gray-400">Question {fIdx + 1}</span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full ${
+                                      feed.is_correct
+                                        ? 'bg-green-100 text-green-800'
+                                        : 'bg-red-100 text-red-800'
+                                    }`}
+                                  >
+                                    {feed.is_correct ? 'Correct' : 'Incorrect'}
+                                  </span>
+                                </div>
+                                <h5 className="text-xs md:text-sm font-bold text-gray-900 mb-3">
+                                  {feed.question_text}
+                                </h5>
+
+                                <div className="space-y-1.5">
+                                  {originalQ?.options.map((opt, oIdx) => {
+                                    const isCorrectOpt = oIdx === correctAnsIdx;
+                                    const isStudentChosen = oIdx === studentAnsIdx;
+
+                                    return (
+                                      <div
+                                        key={oIdx}
+                                        className={`px-3 py-2 rounded-lg border text-2xs md:text-xs font-semibold ${
+                                          isCorrectOpt
+                                            ? 'bg-green-100 border-green-300 text-green-900'
+                                            : isStudentChosen
+                                            ? 'bg-red-105 bg-red-100 border-red-300 text-red-900'
+                                            : 'bg-white border-gray-200 text-gray-600'
+                                        }`}
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <span>{opt}</span>
+                                          {isCorrectOpt && (
+                                            <span className="text-green-700 font-bold">✔ Correct Answer</span>
+                                          )}
+                                          {isStudentChosen && !isCorrectOpt && (
+                                            <span className="text-red-700 font-bold">✘ Your Choice</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
 
                     </div>
