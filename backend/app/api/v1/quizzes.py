@@ -6,6 +6,7 @@ API router for Quizzes: retrieval for attempts and submissions.
 
 import uuid
 import logging
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -13,11 +14,43 @@ from app.db.session import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.quiz import Quiz, QuizAttempt, AttemptAnswer
-from app.schemas.quiz import QuizAttemptResponse, QuizSubmitRequest, QuizSubmitResponse
+from app.models.file import Document
+from app.schemas.quiz import QuizAttemptResponse, QuizSubmitRequest, QuizSubmitResponse, QuizHistoryItem
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/quizzes", tags=["Quizzes"])
+
+
+@router.get("/history", response_model=List[QuizHistoryItem])
+def get_quiz_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Retrieve the current user's past quiz attempts.
+    """
+    attempts = (
+        db.query(QuizAttempt)
+        .join(Quiz, QuizAttempt.quiz_id == Quiz.id)
+        .join(Document, Quiz.document_id == Document.id)
+        .filter(QuizAttempt.user_id == current_user.id)
+        .order_by(QuizAttempt.attempted_at.desc())
+        .all()
+    )
+
+    results = []
+    for attempt in attempts:
+        results.append(QuizHistoryItem(
+            quiz_id=attempt.quiz_id,
+            document_id=attempt.quiz.document_id,
+            document_filename=attempt.quiz.document.filename,
+            quiz_type=attempt.quiz.quiz_type,
+            score=attempt.score,
+            attempted_at=attempt.attempted_at,
+        ))
+
+    return results
 
 
 @router.get("/{quiz_id}", response_model=QuizAttemptResponse)

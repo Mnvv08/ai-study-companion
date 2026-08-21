@@ -409,3 +409,60 @@ def test_submit_quiz_other_user_document_404(other_auth_headers, sample_document
     assert response.status_code == 404
     assert response.json()["detail"] == "Quiz not found."
 
+
+def test_get_quiz_history_empty(auth_headers):
+    """Verify that get_quiz_history returns an empty list when the user has no history."""
+    response = client.get("/quizzes/history", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_get_quiz_history_success(auth_headers, sample_document, student_user):
+    """Verify that quiz history returns past attempts with filename details, ordered by most recent."""
+    db = TestingSessionLocal()
+    
+    # Create a quiz
+    quiz = Quiz(
+        id="quiz-history-1",
+        document_id=sample_document.id,
+        quiz_type="mcq"
+    )
+    db.add(quiz)
+    db.commit()
+
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+
+    # Create attempts with explicit different timestamps
+    attempt1 = QuizAttempt(
+        id="attempt-h1",
+        user_id=student_user.id,
+        quiz_id="quiz-history-1",
+        score=0.5,
+        attempted_at=now - timedelta(hours=1)
+    )
+    attempt2 = QuizAttempt(
+        id="attempt-h2",
+        user_id=student_user.id,
+        quiz_id="quiz-history-1",
+        score=1.0,
+        attempted_at=now
+    )
+    db.add(attempt1)
+    db.add(attempt2)
+    db.commit()
+    db.close()
+
+    response = client.get("/quizzes/history", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+    
+    # Ordered by most recent
+    assert data[0]["score"] == 1.0
+    assert data[0]["document_filename"] == sample_document.filename
+    assert data[0]["quiz_type"] == "mcq"
+    assert data[1]["score"] == 0.5
+
+
+

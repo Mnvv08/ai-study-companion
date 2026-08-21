@@ -56,3 +56,16 @@ class QuizSubmitResponse(BaseModel):
     correct_count: int = Field(..., description="Number of questions answered correctly")
     feedback: List[QuestionFeedback] = Field(..., description="Per-question feedback details")
 
+
+class QuizHistoryItem(BaseModel):
+    quiz_id: str = Field(..., description="ID of the quiz attempted")
+    document_id: str = Field(..., description="ID of the source document")
+    document_filename: str = Field(..., description="Name of the source document file")
+    quiz_type: str = Field(..., description="Type of the quiz ('mcq' or 'short_answer')")
+    score: float = Field(..., description="Score fraction from 0.0 to 1.0")
+    attempted_at: datetime = Field(..., description="Timestamp of the attempt")
+
+    class Config:
+        from_attributes = True
+
+
