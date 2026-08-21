@@ -5,6 +5,7 @@ Pydantic schemas for document upload, processing status, and document details.
 """
 
 from datetime import datetime
+from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
 
@@ -23,14 +24,14 @@ class DocumentStatusResponse(BaseModel):
     id: str
     filename: str
     status: str
-    error_message: str | None = None
+    error_message: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class DocumentDetailResponse(DocumentResponse):
-    extracted_text_preview: str | None = None
+    extracted_text_preview: Optional[str] = None
 
 
 # Backwards compatibility aliases

@@ -13,6 +13,13 @@ from app.api.v1 import health, auth, documents, files, notes, rag, generation
 from app.db.base import Base
 from app.db.session import engine
 
+# Import all models explicitly so SQLAlchemy registers their metadata
+# before Base.metadata.create_all() runs in the lifespan hook.
+# This is the correct pattern to avoid circular imports: models import
+# Base from db/base.py (which has no model imports), and main.py
+# is the single place that loads all models together.
+from app.models import user, file  # noqa: F401, E402
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

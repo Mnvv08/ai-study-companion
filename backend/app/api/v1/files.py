@@ -14,7 +14,7 @@ from app.db.session import get_db
 from app.core.config import settings
 from app.core.security import get_current_user
 from app.models.user import User
-from app.models.file import Document, UploadedFile
+from app.models.file import Document
 from app.schemas.file import FileResponse, FileDetailResponse
 from app.services.extraction import extract_text_from_pdf
 
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/files", tags=["Files"])
 
 @router.post("/upload", response_model=FileResponse, status_code=status.HTTP_201_CREATED)
 async def upload_file(
-    file: UploadedFile = File(...),
+    file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -77,7 +77,7 @@ async def upload_file(
         )
 
     # Save metadata in DB
-    db_file = UploadedFile(
+    db_file = Document(
         user_id=current_user.id,
         filename=filename,
         file_path=file_path,
@@ -100,9 +100,9 @@ def list_files(
 ):
     """List all files uploaded by the authenticated user."""
     return (
-        db.query(UploadedFile)
-        .filter(UploadedFile.user_id == current_user.id)
-        .order_by(UploadedFile.created_at.desc())
+        db.query(Document)
+        .filter(Document.user_id == current_user.id)
+        .order_by(Document.created_at.desc())
         .all()
     )
 
@@ -115,8 +115,8 @@ def get_file(
 ):
     """Get detailed information about a specific file including preview of extracted text."""
     db_file = (
-        db.query(UploadedFile)
-        .filter(UploadedFile.id == file_id, UploadedFile.user_id == current_user.id)
+        db.query(Document)
+        .filter(Document.id == file_id, Document.user_id == current_user.id)
         .first()
     )
     if not db_file:
@@ -147,8 +147,8 @@ def delete_file(
 ):
     """Delete a file from database and disk."""
     db_file = (
-        db.query(UploadedFile)
-        .filter(UploadedFile.id == file_id, UploadedFile.user_id == current_user.id)
+        db.query(Document)
+        .filter(Document.id == file_id, Document.user_id == current_user.id)
         .first()
     )
     if not db_file:

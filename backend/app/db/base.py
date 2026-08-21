@@ -2,7 +2,10 @@
 app/db/base.py
 ──────────────
 Declarative base for all SQLAlchemy models.
-Import all models here so SQLAlchemy and Alembic discover them.
+
+IMPORTANT: Do NOT import models here — that causes circular imports.
+Models import Base from this file; main.py imports the models to trigger
+SQLAlchemy metadata discovery before create_all() runs.
 """
 
 from sqlalchemy.orm import DeclarativeBase
@@ -10,8 +13,3 @@ from sqlalchemy.orm import DeclarativeBase
 
 class Base(DeclarativeBase):
     pass
-
-
-# Register all models here for metadata discovery
-from app.models.user import User  # noqa: F401, E402
-from app.models.file import Document, UploadedFile  # noqa: F401, E402

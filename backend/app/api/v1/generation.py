@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["AI Generation"])
 
 
-def _get_user_document_content(doc_id: str, user_id: str, db: Session) -> tuple[Document, str]:
+def _get_user_document_content(doc_id: str, user_id: str, db: Session) -> "tuple[Document, str]":
     """Helper to verify document ownership and pull content from ChromaDB or text storage."""
     db_doc = (
         db.query(Document)

@@ -64,6 +64,8 @@ class GenerateMCQResponse(BaseModel):
 
 # ── Short-Answer Questions (Phase 2 Step 3) ───────────────────────
 class ShortAnswerItem(BaseModel):
+    model_config = {"protected_namespaces": ()}  # allows model_answer field name
+
     question: str = Field(..., description="Short-answer exam question requiring 1-3 sentences")
     model_answer: str = Field(..., description="Concise model answer based strictly on the material")
     topic: str = Field(default="General", description="Topic label representing the tested concept")

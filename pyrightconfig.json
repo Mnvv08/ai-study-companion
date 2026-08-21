@@ -1,0 +1,9 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.9",
+  "pythonPlatform": "Darwin",
+  "include": ["backend"],
+  "exclude": [".venv", "frontend", "**/__pycache__"],
+  "reportMissingModuleSource": "none"
+}
