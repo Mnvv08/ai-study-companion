@@ -10,6 +10,7 @@ Workflow for Flashcards:
   4. Defensively parse and return JSON without persisting to DB yet.
 """
 
+import uuid
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -18,6 +19,7 @@ from app.db.session import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.file import Document
+from app.models.quiz import Quiz, Question
 from app.schemas.generation import (
     GenerateFlashcardsRequest,
     GenerateFlashcardsResponse,
@@ -153,7 +155,6 @@ def generate_mcqs(
 
     try:
         mcqs = llm_service.generate_mcqs(text_content=content)
-        return GenerateMCQResponse(document_id=db_doc.id, questions=mcqs)
     except RuntimeError as llm_err:
         logger.error(f"LLM MCQ generation error for document {db_doc.id}: {llm_err}")
         raise HTTPException(
@@ -165,6 +166,52 @@ def generate_mcqs(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to generate MCQs.",
+        )
+
+    # Persist the generated MCQs to the database inside a single transaction
+    quiz_id = str(uuid.uuid4())
+    try:
+        new_quiz = Quiz(
+            id=quiz_id,
+            document_id=db_doc.id,
+            quiz_type="mcq"
+        )
+        db.add(new_quiz)
+
+        questions_list = []
+        for item in mcqs:
+            q_id = str(uuid.uuid4())
+            db_q = Question(
+                id=q_id,
+                quiz_id=quiz_id,
+                question_text=item["question"],
+                options=item["options"],
+                correct_answer=str(item["correct_index"]),
+                topic_tag=item["topic"]
+            )
+            db.add(db_q)
+
+            questions_list.append({
+                "id": q_id,
+                "quiz_id": quiz_id,
+                "question": item["question"],
+                "options": item["options"],
+                "correct_index": item["correct_index"],
+                "topic": item["topic"]
+            })
+
+        db.commit()
+        return GenerateMCQResponse(
+            document_id=db_doc.id,
+            quiz_id=quiz_id,
+            questions=questions_list
+        )
+    except Exception as db_err:
+        db.rollback()
+        logger.error(f"Database error persisting MCQ quiz for document {db_doc.id}: {db_err}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save generated MCQs to the database.",
         )
 
 
@@ -211,7 +258,6 @@ def generate_short_questions(
 
     try:
         questions = llm_service.generate_short_questions(text_content=content)
-        return GenerateShortAnswerResponse(document_id=db_doc.id, questions=questions)
     except RuntimeError as llm_err:
         logger.error(f"LLM short-answer generation error for document {db_doc.id}: {llm_err}")
         raise HTTPException(
@@ -223,4 +269,49 @@ def generate_short_questions(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to generate short-answer questions.",
+        )
+
+    # Persist the generated short-answer questions to the database inside a single transaction
+    quiz_id = str(uuid.uuid4())
+    try:
+        new_quiz = Quiz(
+            id=quiz_id,
+            document_id=db_doc.id,
+            quiz_type="short_answer"
+        )
+        db.add(new_quiz)
+
+        questions_list = []
+        for item in questions:
+            q_id = str(uuid.uuid4())
+            db_q = Question(
+                id=q_id,
+                quiz_id=quiz_id,
+                question_text=item["question"],
+                options=None,
+                correct_answer=item["model_answer"],
+                topic_tag=item["topic"]
+            )
+            db.add(db_q)
+
+            questions_list.append({
+                "id": q_id,
+                "quiz_id": quiz_id,
+                "question": item["question"],
+                "model_answer": item["model_answer"],
+                "topic": item["topic"]
+            })
+
+        db.commit()
+        return GenerateShortAnswerResponse(
+            document_id=db_doc.id,
+            quiz_id=quiz_id,
+            questions=questions_list
+        )
+    except Exception as db_err:
+        db.rollback()
+        logger.error(f"Database error persisting short-answer quiz for document {db_doc.id}: {db_err}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save generated short-answer questions to the database.",
         )

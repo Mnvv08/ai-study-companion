@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api.v1 import health, auth, documents, files, notes, rag, generation
+from app.api.v1 import health, auth, documents, files, notes, rag, generation, quizzes
 from app.db.base import Base
 from app.db.session import engine
 
@@ -18,7 +18,7 @@ from app.db.session import engine
 # This is the correct pattern to avoid circular imports: models import
 # Base from db/base.py (which has no model imports), and main.py
 # is the single place that loads all models together.
-from app.models import user, file  # noqa: F401, E402
+from app.models import user, file, quiz  # noqa: F401, E402
 
 
 @asynccontextmanager
@@ -66,6 +66,8 @@ app.include_router(generation.router, prefix="/api/v1")
 app.include_router(generation.router)  # Direct /flashcards/generate, /mcq/generate access
 app.include_router(rag.router, prefix="/api/v1")
 app.include_router(rag.router)  # Direct /qa/ask access
+app.include_router(quizzes.router, prefix="/api/v1")
+app.include_router(quizzes.router)  # Direct /quizzes/{quiz_id} access
 
 
 @app.get("/", tags=["Root"])

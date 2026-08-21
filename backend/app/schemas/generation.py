@@ -40,6 +40,11 @@ class MCQItem(BaseModel):
     topic: str = Field(default="General", description="Topic label representing the tested concept")
 
 
+class MCQItemWithIds(MCQItem):
+    id: str = Field(..., description="Unique database ID for the question")
+    quiz_id: str = Field(..., description="ID of the parent quiz")
+
+
 class GenerateMCQRequest(BaseModel):
     document_id: Optional[str] = None
     file_id: Optional[str] = None
@@ -54,11 +59,12 @@ class GenerateMCQRequest(BaseModel):
 
 class GenerateMCQResponse(BaseModel):
     document_id: str
-    questions: List[MCQItem]
+    quiz_id: str
+    questions: List[MCQItemWithIds]
 
     # Alias for backwards compatibility
     @property
-    def mcqs(self) -> List[MCQItem]:
+    def mcqs(self) -> List[MCQItemWithIds]:
         return self.questions
 
 
@@ -69,6 +75,11 @@ class ShortAnswerItem(BaseModel):
     question: str = Field(..., description="Short-answer exam question requiring 1-3 sentences")
     model_answer: str = Field(..., description="Concise model answer based strictly on the material")
     topic: str = Field(default="General", description="Topic label representing the tested concept")
+
+
+class ShortAnswerItemWithIds(ShortAnswerItem):
+    id: str = Field(..., description="Unique database ID for the question")
+    quiz_id: str = Field(..., description="ID of the parent quiz")
 
 
 class GenerateShortAnswerRequest(BaseModel):
@@ -85,10 +96,12 @@ class GenerateShortAnswerRequest(BaseModel):
 
 class GenerateShortAnswerResponse(BaseModel):
     document_id: str
-    questions: List[ShortAnswerItem]
+    quiz_id: str
+    questions: List[ShortAnswerItemWithIds]
 
 
 # Backwards compatibility aliases
 ShortQuestionItem = ShortAnswerItem
 GenerateShortQRequest = GenerateShortAnswerRequest
 GenerateShortQResponse = GenerateShortAnswerResponse
+
