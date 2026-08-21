@@ -127,7 +127,10 @@ def get_recommendations(
         doc_id = doc_info[0] if doc_info else "unknown"
         doc_filename = doc_info[1] if doc_info else "unknown_document"
 
-        reason = f"Only {wt['accuracy_percentage']}% accuracy across {wt['total_attempted']} questions"
+        if current_user.persona_mode:
+            reason = f"Thoda aur focus chahiye, senior says: sirf {wt['accuracy_percentage']}% accuracy across {wt['total_attempted']} questions."
+        else:
+            reason = f"Only {wt['accuracy_percentage']}% accuracy across {wt['total_attempted']} questions"
 
         recommendations.append({
             "topic": topic_name,

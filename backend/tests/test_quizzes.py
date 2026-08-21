@@ -125,7 +125,7 @@ def test_mcq_generation_persists_quiz_and_questions(auth_headers, sample_documen
     monkeypatch.setattr(
         LLMClientService,
         "generate_mcqs",
-        lambda self, text_content: mock_mcqs
+        lambda self, text_content, *args, **kwargs: mock_mcqs
     )
 
     response = client.post(
@@ -169,7 +169,7 @@ def test_short_answer_generation_persists_quiz_and_questions(auth_headers, sampl
     monkeypatch.setattr(
         LLMClientService,
         "generate_short_questions",
-        lambda self, text_content: mock_questions
+        lambda self, text_content, *args, **kwargs: mock_questions
     )
 
     response = client.post(

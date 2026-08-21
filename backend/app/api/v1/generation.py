@@ -100,7 +100,7 @@ def generate_flashcards(
     llm_service = LLMClientService()
 
     try:
-        cards = llm_service.generate_flashcards(text_content=content)
+        cards = llm_service.generate_flashcards(text_content=content, persona_mode=current_user.persona_mode)
         return GenerateFlashcardsResponse(document_id=db_doc.id, flashcards=cards)
     except RuntimeError as llm_err:
         logger.error(f"LLM flashcard error for document {db_doc.id}: {llm_err}")
@@ -154,7 +154,7 @@ def generate_mcqs(
     llm_service = LLMClientService()
 
     try:
-        mcqs = llm_service.generate_mcqs(text_content=content)
+        mcqs = llm_service.generate_mcqs(text_content=content, persona_mode=current_user.persona_mode)
     except RuntimeError as llm_err:
         logger.error(f"LLM MCQ generation error for document {db_doc.id}: {llm_err}")
         raise HTTPException(
@@ -257,7 +257,7 @@ def generate_short_questions(
     llm_service = LLMClientService()
 
     try:
-        questions = llm_service.generate_short_questions(text_content=content)
+        questions = llm_service.generate_short_questions(text_content=content, persona_mode=current_user.persona_mode)
     except RuntimeError as llm_err:
         logger.error(f"LLM short-answer generation error for document {db_doc.id}: {llm_err}")
         raise HTTPException(

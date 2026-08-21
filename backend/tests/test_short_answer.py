@@ -146,7 +146,7 @@ def test_generate_short_answer_success(auth_headers, sample_document, monkeypatc
     monkeypatch.setattr(
         LLMClientService,
         "generate_short_questions",
-        lambda self, text_content: mock_questions
+        lambda self, text_content, *args, **kwargs: mock_questions
     )
 
     response = client.post(

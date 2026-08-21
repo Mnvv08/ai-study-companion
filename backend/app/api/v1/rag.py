@@ -120,6 +120,7 @@ def ask_question(
         answer = llm_service.answer_question_with_context(
             question=request.question,
             context_chunks=relevant_chunks,
+            persona_mode=current_user.persona_mode,
         )
         return AskQuestionResponse(
             document_id=db_doc.id,
@@ -219,6 +220,7 @@ def ask_question_multi(
         answer = llm_service.answer_question_with_context(
             question=request.question,
             context_chunks=combined_chunks,
+            persona_mode=current_user.persona_mode,
         )
         return AskMultiQuestionResponse(
             document_ids=[doc.id for doc in docs],

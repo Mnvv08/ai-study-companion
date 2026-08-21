@@ -81,9 +81,27 @@ class LLMClientService:
         )
         self.model = settings.GROQ_CHAT_MODEL
 
-    def generate_study_notes(self, text_content: str) -> Dict[str, Any]:
+    def _get_system_prompt(self, base_prompt: str, persona_mode: bool) -> str:
+        """
+        Wraps the base system prompt with the Hinglish student-mentor persona layer when enabled.
+        """
+        if not persona_mode:
+            return base_prompt
+
+        persona_text = (
+            "\nRespond in a warm, encouraging Hinglish (Hindi-English mix) tone, like a friendly "
+            "senior mentoring a junior student. Keep it natural and conversational, not "
+            "exaggerated or stereotypical. Do NOT change the underlying facts, grounding rules, "
+            "or JSON structure of your response — only the tone and phrasing of any free-text "
+            "parts change. If the response format is JSON, keep field names and structure in "
+            "English; only natural-language field VALUES (like a notes 'points' array or a "
+            "QA answer) should reflect the Hinglish tone."
+        )
+        return f"{base_prompt}\n{persona_text}"
+
+    def generate_study_notes(self, text_content: str, persona_mode: bool = False) -> Dict[str, Any]:
         """Generates structured, exam-ready study notes in JSON format."""
-        system_prompt = (
+        base_prompt = (
             "You are a study assistant that converts raw study material into structured,\n"
             "exam-ready notes.\n"
             "Rules:\n"
@@ -96,6 +114,7 @@ class LLMClientService:
             '{ "title": "string", "sections": [{"heading": "string", "points": ["string"]}],\n'
             '  "key_terms": [{"term": "string", "definition": "string"}] }'
         )
+        system_prompt = self._get_system_prompt(base_prompt, persona_mode)
 
         user_prompt = f'Study Material:\n"""\n{text_content[:20000]}\n"""'
 
@@ -123,9 +142,9 @@ class LLMClientService:
         except Exception as e:
             raise _handle_provider_error(e, "study notes generation")
 
-    def generate_flashcards(self, text_content: str) -> List[Dict[str, Any]]:
+    def generate_flashcards(self, text_content: str, persona_mode: bool = False) -> List[Dict[str, Any]]:
         """Generates active-recall flashcards from study material with topic classification."""
-        system_prompt = (
+        base_prompt = (
             "You are a study assistant that creates flashcards from study material.\n"
             "Rules:\n"
             "- Use ONLY the provided content. Do not add outside facts.\n"
@@ -139,6 +158,7 @@ class LLMClientService:
             "- Return the output in the following JSON structure exactly:\n"
             '{ "flashcards": [{"front": "string", "back": "string", "topic": "string"}] }'
         )
+        system_prompt = self._get_system_prompt(base_prompt, persona_mode)
 
         user_prompt = f'Study Material:\n"""\n{text_content[:20000]}\n"""'
 
@@ -172,9 +192,9 @@ class LLMClientService:
         except Exception as e:
             raise _handle_provider_error(e, "flashcard generation")
 
-    def generate_mcqs(self, text_content: str) -> List[Dict[str, Any]]:
+    def generate_mcqs(self, text_content: str, persona_mode: bool = False) -> List[Dict[str, Any]]:
         """Generates Multiple Choice Questions with 4 options, correct_index, and topic tags."""
-        system_prompt = (
+        base_prompt = (
             "You are a study assistant that creates multiple-choice questions from study material.\n"
             "Rules:\n"
             "- Use ONLY the provided content. Do not add outside facts.\n"
@@ -188,6 +208,7 @@ class LLMClientService:
             '{ "questions": [{"question": "string", "options": ["string","string","string","string"],\n'
             '  "correct_index": 0, "topic": "string"}] }'
         )
+        system_prompt = self._get_system_prompt(base_prompt, persona_mode)
 
         user_prompt = f'Study Material:\n"""\n{text_content[:20000]}\n"""'
 
@@ -219,10 +240,6 @@ class LLMClientService:
                 correct_idx = item.get("correct_index")
                 topic = str(item.get("topic", "General")).strip() or "General"
 
-                # Validation Rules:
-                # 1. Non-empty question text
-                # 2. Options must be a list of exactly 4 strings
-                # 3. correct_index must be an integer between 0 and 3
                 if (
                     question_text
                     and isinstance(options, list)
@@ -248,9 +265,9 @@ class LLMClientService:
         except Exception as e:
             raise _handle_provider_error(e, "MCQ generation")
 
-    def generate_short_questions(self, text_content: str) -> List[Dict[str, Any]]:
+    def generate_short_questions(self, text_content: str, persona_mode: bool = False) -> List[Dict[str, Any]]:
         """Generates conceptual short-answer exam questions with model answers and topic labels."""
-        system_prompt = (
+        base_prompt = (
             "You are a study assistant that creates short-answer exam questions from study material.\n"
             "Rules:\n"
             "- Use ONLY the provided content. Do not add outside facts.\n"
@@ -262,6 +279,7 @@ class LLMClientService:
             "- Return the output in the following JSON structure exactly:\n"
             '{ "questions": [{"question": "string", "model_answer": "string", "topic": "string"}] }'
         )
+        system_prompt = self._get_system_prompt(base_prompt, persona_mode)
 
         user_prompt = f'Study Material:\n"""\n{text_content[:20000]}\n"""'
 
@@ -305,11 +323,11 @@ class LLMClientService:
         except Exception as e:
             raise _handle_provider_error(e, "short-answer question generation")
 
-    def answer_question_with_context(self, question: str, context_chunks: List[str]) -> str:
+    def answer_question_with_context(self, question: str, context_chunks: List[str], persona_mode: bool = False) -> str:
         """Answers a user question based strictly on retrieved context chunks (RAG)."""
         retrieved_chunks = "\n\n---\n\n".join(context_chunks)
 
-        system_prompt = (
+        base_prompt = (
             "You are a study assistant helping a student understand their uploaded course material.\n"
             "Rules:\n"
             "- Answer ONLY using the information in the provided context chunks.\n"
@@ -317,6 +335,7 @@ class LLMClientService:
             "- Keep answers clear and exam-relevant, not overly long.\n"
             "- If helpful, quote the relevant line from the context to support your answer."
         )
+        system_prompt = self._get_system_prompt(base_prompt, persona_mode)
 
         user_prompt = f'Context:\n"""\n{retrieved_chunks}\n"""\n\nQuestion: {question}'
 

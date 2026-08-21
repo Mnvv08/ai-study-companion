@@ -24,6 +24,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+    persona_mode: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     # Relationship to uploaded documents — if user is deleted, delete their files
     documents: Mapped[list["Document"]] = relationship(

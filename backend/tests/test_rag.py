@@ -144,7 +144,7 @@ def test_ask_question_success(auth_headers, sample_document, monkeypatch):
     monkeypatch.setattr(
         LLMClientService,
         "answer_question_with_context",
-        lambda self, question, context_chunks: "Dijkstra's algorithm is an algorithm used to find the shortest path in non-negative weighted graphs."
+        lambda self, question, context_chunks, *args, **kwargs: "Dijkstra's algorithm is an algorithm used to find the shortest path in non-negative weighted graphs."
     )
 
     response = client.post(
@@ -240,7 +240,7 @@ def test_ask_question_multi_success(auth_headers, student_user, sample_document,
     monkeypatch.setattr(
         LLMClientService,
         "answer_question_with_context",
-        lambda self, question, context_chunks: "Dijkstra handles non-negative edge weights, while Bellman-Ford supports negative weights."
+        lambda self, question, context_chunks, *args, **kwargs: "Dijkstra handles non-negative edge weights, while Bellman-Ford supports negative weights."
     )
 
     payload = {

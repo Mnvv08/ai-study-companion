@@ -168,7 +168,7 @@ def test_generate_notes_success(auth_headers, sample_document, monkeypatch):
     monkeypatch.setattr(
         LLMClientService,
         "generate_study_notes",
-        lambda self, text: mock_notes
+        lambda self, text, *args, **kwargs: mock_notes
     )
 
     response = client.post(

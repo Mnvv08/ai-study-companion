@@ -159,7 +159,7 @@ def test_generate_mcqs_success(auth_headers, sample_document, monkeypatch):
     monkeypatch.setattr(
         LLMClientService,
         "generate_mcqs",
-        lambda self, text_content: mock_mcqs
+        lambda self, text_content, *args, **kwargs: mock_mcqs
     )
 
     response = client.post(

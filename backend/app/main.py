@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api.v1 import health, auth, documents, files, notes, rag, generation, quizzes, analytics
+from app.api.v1 import health, auth, documents, files, notes, rag, generation, quizzes, analytics, users
 from app.db.base import Base
 from app.db.session import engine
 
@@ -70,6 +70,8 @@ app.include_router(quizzes.router, prefix="/api/v1")
 app.include_router(quizzes.router)  # Direct /quizzes/{quiz_id} access
 app.include_router(analytics.router, prefix="/api/v1")
 app.include_router(analytics.router)  # Direct /analytics/weak-topics access
+app.include_router(users.router, prefix="/api/v1")
+app.include_router(users.router)  # Direct /users/me/settings access
 
 
 @app.get("/", tags=["Root"])

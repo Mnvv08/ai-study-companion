@@ -146,7 +146,7 @@ def test_generate_flashcards_success(auth_headers, sample_document, monkeypatch)
     monkeypatch.setattr(
         LLMClientService,
         "generate_flashcards",
-        lambda self, text_content: mock_cards
+        lambda self, text_content, *args, **kwargs: mock_cards
     )
 
     response = client.post(

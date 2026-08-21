@@ -92,7 +92,7 @@ def generate_notes(
     # ── Call LLM for Structured Notes ─────────────────────────────
     llm_service = LLMClientService()
     try:
-        notes_data = llm_service.generate_study_notes(study_content)
+        notes_data = llm_service.generate_study_notes(study_content, persona_mode=current_user.persona_mode)
         return GenerateNotesResponse(
             document_id=db_doc.id,
             title=notes_data.get("title", db_doc.filename),
