@@ -12,8 +12,9 @@ Workflow for Flashcards:
 
 import uuid
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
+from app.core.rate_limiter import limiter
 
 from app.db.session import get_db
 from app.core.security import get_current_user
@@ -78,8 +79,10 @@ def _get_user_document_content(doc_id: str, user_id: str, db: Session) -> "tuple
     response_model=GenerateFlashcardsResponse,
     include_in_schema=False,
 )
+@limiter.limit("20/minute")
 def generate_flashcards(
-    request: GenerateFlashcardsRequest,
+    request: Request,
+    payload: GenerateFlashcardsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -92,7 +95,7 @@ def generate_flashcards(
       - Automatically decides card quantity based on content density.
     """
     try:
-        doc_id = request.target_document_id
+        doc_id = payload.target_document_id
     except ValueError as val_err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(val_err))
 
@@ -117,22 +120,24 @@ def generate_flashcards(
 
 
 @router.post(
-    "/mcqs/generate",
-    response_model=GenerateMCQResponse,
-    summary="Generate MCQs with 4 options and correct_index",
-)
-@router.post(
     "/mcq/generate",
     response_model=GenerateMCQResponse,
     include_in_schema=False,
+)
+@router.post(
+    "/mcqs/generate",
+    response_model=GenerateMCQResponse,
+    summary="Generate Multiple Choice Questions (MCQs) from a document",
 )
 @router.post(
     "/generate/mcq",
     response_model=GenerateMCQResponse,
     include_in_schema=False,
 )
+@limiter.limit("20/minute")
 def generate_mcqs(
-    request: GenerateMCQRequest,
+    request: Request,
+    payload: GenerateMCQRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -146,7 +151,7 @@ def generate_mcqs(
       - Malformed questions with != 4 options or out-of-range correct_index are dropped.
     """
     try:
-        doc_id = request.target_document_id
+        doc_id = payload.target_document_id
     except ValueError as val_err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(val_err))
 
@@ -218,7 +223,7 @@ def generate_mcqs(
 @router.post(
     "/short-answer/generate",
     response_model=GenerateShortAnswerResponse,
-    summary="Generate short-answer exam questions with model answers",
+    summary="Generate short-answer conceptual exam questions from a document",
 )
 @router.post(
     "/shortq/generate",
@@ -235,8 +240,10 @@ def generate_mcqs(
     response_model=GenerateShortAnswerResponse,
     include_in_schema=False,
 )
+@limiter.limit("20/minute")
 def generate_short_questions(
-    request: GenerateShortAnswerRequest,
+    request: Request,
+    payload: GenerateShortAnswerRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -249,7 +256,7 @@ def generate_short_questions(
       - Tagged with topic for weak-area tracking.
     """
     try:
-        doc_id = request.target_document_id
+        doc_id = payload.target_document_id
     except ValueError as val_err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(val_err))
 

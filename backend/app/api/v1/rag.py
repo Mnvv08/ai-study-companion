@@ -12,8 +12,9 @@ Workflow:
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
+from app.core.rate_limiter import limiter
 
 from app.db.session import get_db
 from app.core.security import get_current_user
@@ -39,8 +40,10 @@ router = APIRouter(tags=["RAG Q&A"])
     response_model=AskQuestionResponse,
     include_in_schema=False,
 )
+@limiter.limit("20/minute")
 def ask_question(
-    request: AskQuestionRequest,
+    request: Request,
+    payload: AskQuestionRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -55,7 +58,7 @@ def ask_question(
      """
     # ── 1. Resolve Document ID & Verify Ownership ─────────────────
     try:
-        doc_id = request.target_document_id
+        doc_id = payload.target_document_id
     except ValueError as val_err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -81,7 +84,7 @@ def ask_question(
         relevant_chunks = vector_service.search_similar_chunks(
             user_id=current_user.id,
             document_id=db_doc.id,
-            query=request.question,
+            query=payload.question,
             top_k=4,
         )
     except Exception as search_err:
@@ -99,7 +102,7 @@ def ask_question(
             relevant_chunks = vector_service.search_similar_chunks(
                 user_id=current_user.id,
                 document_id=db_doc.id,
-                query=request.question,
+                query=payload.question,
                 top_k=4,
             )
         except Exception as idx_err:
@@ -109,7 +112,7 @@ def ask_question(
     if not relevant_chunks:
         return AskQuestionResponse(
             document_id=db_doc.id,
-            question=request.question,
+            question=payload.question,
             answer="I couldn't find this in your uploaded material.",
             sources_used=[],
         )
@@ -118,13 +121,13 @@ def ask_question(
     llm_service = LLMClientService()
     try:
         answer = llm_service.answer_question_with_context(
-            question=request.question,
+            question=payload.question,
             context_chunks=relevant_chunks,
             persona_mode=current_user.persona_mode,
         )
         return AskQuestionResponse(
             document_id=db_doc.id,
-            question=request.question,
+            question=payload.question,
             answer=answer,
             sources_used=relevant_chunks,
         )
@@ -147,8 +150,10 @@ def ask_question(
     response_model=AskMultiQuestionResponse,
     summary="Ask a question across multiple uploaded study documents (RAG Q&A)",
 )
+@limiter.limit("20/minute")
 def ask_question_multi(
-    request: AskMultiQuestionRequest,
+    request: Request,
+    payload: AskMultiQuestionRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -159,11 +164,11 @@ def ask_question_multi(
     # 1. Verify that all document IDs belong to the current user (404/403 if any don't)
     docs = (
         db.query(Document)
-        .filter(Document.id.in_(request.document_ids), Document.user_id == current_user.id)
+        .filter(Document.id.in_(payload.document_ids), Document.user_id == current_user.id)
         .all()
     )
 
-    if len(docs) != len(set(request.document_ids)):
+    if len(docs) != len(set(payload.document_ids)):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="One or more documents not found or unauthorized.",
@@ -179,7 +184,7 @@ def ask_question_multi(
             chunks = vector_service.search_similar_chunks(
                 user_id=current_user.id,
                 document_id=doc.id,
-                query=request.question,
+                query=payload.question,
                 top_k=2,
             )
         except Exception as search_err:
@@ -197,7 +202,7 @@ def ask_question_multi(
                 chunks = vector_service.search_similar_chunks(
                     user_id=current_user.id,
                     document_id=doc.id,
-                    query=request.question,
+                    query=payload.question,
                     top_k=2,
                 )
             except Exception as idx_err:
@@ -209,7 +214,7 @@ def ask_question_multi(
     if not combined_chunks:
         return AskMultiQuestionResponse(
             document_ids=[doc.id for doc in docs],
-            question=request.question,
+            question=payload.question,
             answer="I couldn't find this in your uploaded material.",
             sources_used=[],
         )
@@ -218,13 +223,13 @@ def ask_question_multi(
     llm_service = LLMClientService()
     try:
         answer = llm_service.answer_question_with_context(
-            question=request.question,
+            question=payload.question,
             context_chunks=combined_chunks,
             persona_mode=current_user.persona_mode,
         )
         return AskMultiQuestionResponse(
             document_ids=[doc.id for doc in docs],
-            question=request.question,
+            question=payload.question,
             answer=answer,
             sources_used=combined_chunks,
         )

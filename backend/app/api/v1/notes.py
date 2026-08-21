@@ -11,8 +11,9 @@ Workflow:
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
+from app.core.rate_limiter import limiter
 
 from app.db.session import get_db
 from app.core.security import get_current_user
@@ -37,8 +38,10 @@ router = APIRouter(tags=["Study Notes"])
     response_model=GenerateNotesResponse,
     include_in_schema=False,
 )
+@limiter.limit("20/minute")
 def generate_notes(
-    request: GenerateNotesRequest,
+    request: Request,
+    payload: GenerateNotesRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -52,7 +55,7 @@ def generate_notes(
       4. Validates JSON defensively before returning.
     """
     try:
-        doc_id = request.target_document_id
+        doc_id = payload.target_document_id
     except ValueError as val_err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

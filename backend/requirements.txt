@@ -4,7 +4,9 @@
 
 # ── Web Framework ─────────────────────────────────────────────────
 fastapi==0.115.0
+slowapi==0.1.9
 uvicorn[standard]==0.30.6
+
 
 # ── Configuration ─────────────────────────────────────────────────
 pydantic-settings==2.4.0

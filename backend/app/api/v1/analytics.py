@@ -5,8 +5,9 @@ API router for student analytics: weak topic detection.
 """
 
 import logging
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
+from app.core.rate_limiter import limiter
 from sqlalchemy import func, case
 
 from app.db.session import get_db
@@ -68,7 +69,9 @@ def get_weak_topics(
 
 
 @router.get("/recommendations", response_model=RecommendationsResponse)
+@limiter.limit("20/minute")
 def get_recommendations(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
