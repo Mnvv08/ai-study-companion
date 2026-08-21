@@ -17,3 +17,15 @@ class WeakTopicItem(BaseModel):
 
 class WeakTopicsResponse(BaseModel):
     weak_topics: List[WeakTopicItem] = Field(..., description="List of weak topics sorted from lowest to highest accuracy")
+
+
+class RecommendationItem(BaseModel):
+    topic: str = Field(..., description="The recommended topic to revise")
+    reason: str = Field(..., description="Reason for the recommendation based on performance")
+    document_id: str = Field(..., description="ID of the document this topic is associated with")
+    document_filename: str = Field(..., description="Filename of the associated document")
+
+
+class RecommendationsResponse(BaseModel):
+    recommendations: List[RecommendationItem] = Field(..., description="List of revision recommendations for the top 3 weakest topics")
+

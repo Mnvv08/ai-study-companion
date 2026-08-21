@@ -224,3 +224,97 @@ def test_weak_topics_ownership_isolation(auth_headers, other_auth_headers, sampl
     assert len(data2["weak_topics"]) == 1
     assert data2["weak_topics"][0]["topic"] == "Topic ISO"
     assert data2["weak_topics"][0]["accuracy_percentage"] == 100.0
+
+
+def test_recommendations_unauthorized():
+    """Verify that GET /analytics/recommendations requires JWT authorization."""
+    response = client.get("/analytics/recommendations")
+    assert response.status_code == 401
+
+
+def test_recommendations_no_history(auth_headers):
+    """Verify that a user with no history returns empty recommendations list."""
+    response = client.get("/analytics/recommendations", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["recommendations"] == []
+
+
+def test_recommendations_success(auth_headers, sample_document):
+    """Verify that revision recommendations returns the top 3 weakest topics with formatted reason and document info."""
+    db = TestingSessionLocal()
+    quiz = Quiz(id="quiz-rec", document_id=sample_document.id, quiz_type="mcq")
+    db.add(quiz)
+
+    # We create 4 topics so we can verify only the top 3 weakest are recommended
+    # Topic 1: 3 attempts, 0 correct -> 0% accuracy
+    # Topic 2: 3 attempts, 1 correct -> 33.33% accuracy
+    # Topic 3: 3 attempts, 2 correct -> 66.67% accuracy
+    # Topic 4: 3 attempts, 3 correct -> 100% accuracy (excluded from top 3 weakest)
+
+    questions = []
+    # Topic 1
+    questions.append(Question(id="q-t1-1", quiz_id="quiz-rec", question_text="Q?", correct_answer="0", topic_tag="Topic 1"))
+    questions.append(Question(id="q-t1-2", quiz_id="quiz-rec", question_text="Q?", correct_answer="0", topic_tag="Topic 1"))
+    questions.append(Question(id="q-t1-3", quiz_id="quiz-rec", question_text="Q?", correct_answer="0", topic_tag="Topic 1"))
+    # Topic 2
+    questions.append(Question(id="q-t2-1", quiz_id="quiz-rec", question_text="Q?", correct_answer="0", topic_tag="Topic 2"))
+    questions.append(Question(id="q-t2-2", quiz_id="quiz-rec", question_text="Q?", correct_answer="0", topic_tag="Topic 2"))
+    questions.append(Question(id="q-t2-3", quiz_id="quiz-rec", question_text="Q?", correct_answer="0", topic_tag="Topic 2"))
+    # Topic 3
+    questions.append(Question(id="q-t3-1", quiz_id="quiz-rec", question_text="Q?", correct_answer="0", topic_tag="Topic 3"))
+    questions.append(Question(id="q-t3-2", quiz_id="quiz-rec", question_text="Q?", correct_answer="0", topic_tag="Topic 3"))
+    questions.append(Question(id="q-t3-3", quiz_id="quiz-rec", question_text="Q?", correct_answer="0", topic_tag="Topic 3"))
+    # Topic 4
+    questions.append(Question(id="q-t4-1", quiz_id="quiz-rec", question_text="Q?", correct_answer="0", topic_tag="Topic 4"))
+    questions.append(Question(id="q-t4-2", quiz_id="quiz-rec", question_text="Q?", correct_answer="0", topic_tag="Topic 4"))
+    questions.append(Question(id="q-t4-3", quiz_id="quiz-rec", question_text="Q?", correct_answer="0", topic_tag="Topic 4"))
+
+    db.add_all(questions)
+
+    # Add attempt
+    attempt = QuizAttempt(id="attempt-rec", user_id="student-analytics-1", quiz_id="quiz-rec", score=0.5)
+    db.add(attempt)
+
+    # Topic 1: 0 correct
+    ans1 = AttemptAnswer(id="ans-t1-1", attempt_id="attempt-rec", question_id="q-t1-1", student_answer="1", is_correct=False)
+    ans2 = AttemptAnswer(id="ans-t1-2", attempt_id="attempt-rec", question_id="q-t1-2", student_answer="1", is_correct=False)
+    ans3 = AttemptAnswer(id="ans-t1-3", attempt_id="attempt-rec", question_id="q-t1-3", student_answer="1", is_correct=False)
+    # Topic 2: 1 correct
+    ans4 = AttemptAnswer(id="ans-t2-1", attempt_id="attempt-rec", question_id="q-t2-1", student_answer="0", is_correct=True)
+    ans5 = AttemptAnswer(id="ans-t2-2", attempt_id="attempt-rec", question_id="q-t2-2", student_answer="1", is_correct=False)
+    ans6 = AttemptAnswer(id="ans-t2-3", attempt_id="attempt-rec", question_id="q-t2-3", student_answer="1", is_correct=False)
+    # Topic 3: 2 correct
+    ans7 = AttemptAnswer(id="ans-t3-1", attempt_id="attempt-rec", question_id="q-t3-1", student_answer="0", is_correct=True)
+    ans8 = AttemptAnswer(id="ans-t3-2", attempt_id="attempt-rec", question_id="q-t3-2", student_answer="0", is_correct=True)
+    ans9 = AttemptAnswer(id="ans-t3-3", attempt_id="attempt-rec", question_id="q-t3-3", student_answer="1", is_correct=False)
+    # Topic 4: 3 correct
+    ans10 = AttemptAnswer(id="ans-t4-1", attempt_id="attempt-rec", question_id="q-t4-1", student_answer="0", is_correct=True)
+    ans11 = AttemptAnswer(id="ans-t4-2", attempt_id="attempt-rec", question_id="q-t4-2", student_answer="0", is_correct=True)
+    ans12 = AttemptAnswer(id="ans-t4-3", attempt_id="attempt-rec", question_id="q-t4-3", student_answer="0", is_correct=True)
+
+    db.add_all([ans1, ans2, ans3, ans4, ans5, ans6, ans7, ans8, ans9, ans10, ans11, ans12])
+    db.commit()
+    db.close()
+
+    response = client.get("/analytics/recommendations", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+
+    # Should only recommend top 3 weakest (Topic 1, 2, 3)
+    recs = data["recommendations"]
+    assert len(recs) == 3
+
+    # Topic 1 should be first (weakest, 0% accuracy)
+    assert recs[0]["topic"] == "Topic 1"
+    assert recs[0]["reason"] == "Only 0.0% accuracy across 3 questions"
+    assert recs[0]["document_id"] == sample_document.id
+    assert recs[0]["document_filename"] == sample_document.filename
+
+    # Topic 2 should be second (33.33% accuracy)
+    assert recs[1]["topic"] == "Topic 2"
+    assert recs[1]["reason"] == "Only 33.33% accuracy across 3 questions"
+
+    # Topic 3 should be third (66.67% accuracy)
+    assert recs[2]["topic"] == "Topic 3"
+    assert recs[2]["reason"] == "Only 66.67% accuracy across 3 questions"
+
