@@ -1,10 +1,11 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useRef } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import apiClient from '../api/client';
 
 const Dashboard = () => {
   const { user, logout } = useContext(AuthContext);
 
+  // Documents listing & selection
   const [documents, setDocuments] = useState([]);
   const [selectedDocId, setSelectedDocId] = useState(null);
   const [loadingList, setLoadingList] = useState(false);
@@ -14,6 +15,12 @@ const Dashboard = () => {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
+
+  // Q&A Chat states
+  const [chatHistory, setChatHistory] = useState([]);
+  const [question, setQuestion] = useState('');
+  const [asking, setAsking] = useState(false);
+  const chatEndRef = useRef(null);
 
   // 1. Fetch documents list on mount
   const fetchDocuments = async () => {
@@ -47,7 +54,6 @@ const Dashboard = () => {
           const updatedDoc = response.data;
           
           if (updatedDoc.status !== 'pending') {
-            // Update document status in the state
             setDocuments((prevDocs) =>
               prevDocs.map((doc) =>
                 doc.id === id ? { ...doc, status: updatedDoc.status } : doc
@@ -65,7 +71,18 @@ const Dashboard = () => {
     };
   }, [pendingIds.join(',')]);
 
-  // 3. Handle File selection and upload
+  // 3. Clear Chat history when selection changes
+  useEffect(() => {
+    setChatHistory([]);
+    setQuestion('');
+  }, [selectedDocId]);
+
+  // Scroll to bottom of chat history on updates
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatHistory, asking]);
+
+  // 4. Handle File selection and upload
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       setFile(e.target.files[0]);
@@ -89,7 +106,7 @@ const Dashboard = () => {
     formData.append('file', file);
 
     try {
-      const response = await apiClient.post('/documents/upload', formData, {
+      await apiClient.post('/documents/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -97,10 +114,8 @@ const Dashboard = () => {
 
       setUploadSuccess(`Successfully uploaded '${file.name}'!`);
       setFile(null);
-      // Reset the file input element manually
       e.target.reset();
 
-      // Refresh documents list to show the new entry immediately
       const refreshResponse = await apiClient.get('/documents');
       setDocuments(refreshResponse.data);
     } catch (err) {
@@ -113,14 +128,60 @@ const Dashboard = () => {
     }
   };
 
+  // 5. Handle Chat Question submission
+  const handleAskSubmit = async (e) => {
+    e.preventDefault();
+    if (!question.trim() || !selectedDocId) return;
+
+    const currentQuestion = question.trim();
+    setQuestion('');
+    setAsking(true);
+
+    const messageIndex = chatHistory.length;
+    // Optimistic update
+    setChatHistory((prev) => [
+      ...prev,
+      { question: currentQuestion, answer: null, error: null, loading: true },
+    ]);
+
+    try {
+      const response = await apiClient.post('/qa/ask', {
+        document_id: selectedDocId,
+        question: currentQuestion,
+      });
+
+      setChatHistory((prev) =>
+        prev.map((msg, idx) =>
+          idx === messageIndex ? { ...msg, answer: response.data.answer, loading: false } : msg
+        )
+      );
+    } catch (err) {
+      console.error(err);
+      const errMsg =
+        err.response?.data?.error ||
+        err.response?.data?.detail ||
+        'Failed to get response. Please check your connection or try again.';
+
+      setChatHistory((prev) =>
+        prev.map((msg, idx) =>
+          idx === messageIndex ? { ...msg, error: errMsg, loading: false } : msg
+        )
+      );
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  const selectedDocName = documents.find((d) => d.id === selectedDocId)?.filename;
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Navbar */}
-      <nav className="bg-white shadow-sm">
+      <nav className="bg-white shadow-sm flex-shrink-0">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 justify-between items-center">
             <div className="flex-shrink-0 flex items-center space-x-2">
-              <span className="text-xl font-bold text-indigo-650 bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent">
+              <span className="text-xl font-bold text-indigo-600 bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent">
                 AI Study Companion
               </span>
             </div>
@@ -139,162 +200,233 @@ const Dashboard = () => {
         </div>
       </nav>
 
-      {/* Main Container */}
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
+      {/* Two-Column Grid Layout */}
+      <div className="flex-grow mx-auto max-w-7xl w-full px-4 py-8 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-12 gap-8 overflow-hidden">
         
-        {/* SECTION 1: Document Upload */}
-        <section className="bg-white rounded-2xl p-6 shadow-md border border-gray-100">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">Upload Study Material</h2>
-          
-          {uploadSuccess && (
-            <div className="mb-4 rounded-md bg-green-50 p-4 text-sm text-green-700 border border-green-200">
-              {uploadSuccess}
-            </div>
-          )}
+        {/* Left Column (Upload + List) - 5 Cols */}
+        <div className="lg:col-span-5 space-y-6 flex flex-col overflow-y-auto pr-1">
+          {/* SECTION 1: Document Upload */}
+          <section className="bg-white rounded-2xl p-6 shadow-md border border-gray-100 flex-shrink-0">
+            <h2 className="text-lg font-bold text-gray-900 mb-4">Upload Study Material</h2>
+            
+            {uploadSuccess && (
+              <div className="mb-4 rounded-md bg-green-50 p-4 text-sm text-green-700 border border-green-200">
+                {uploadSuccess}
+              </div>
+            )}
 
-          {uploadError && (
-            <div className="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-700 border border-red-200">
-              {uploadError}
-            </div>
-          )}
+            {uploadError && (
+              <div className="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-700 border border-red-200">
+                {uploadError}
+              </div>
+            )}
 
-          <form onSubmit={handleUploadSubmit} className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-              <div className="flex-grow">
+            <form onSubmit={handleUploadSubmit} className="space-y-4">
+              <div className="flex flex-col gap-3">
                 <input
                   type="file"
                   accept=".pdf,.pptx,.ppt"
                   onChange={handleFileChange}
-                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
+                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
                 />
+                <button
+                  type="submit"
+                  disabled={uploading || !file}
+                  className="inline-flex justify-center items-center w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-sm"
+                >
+                  {uploading ? 'Uploading...' : 'Upload File'}
+                </button>
               </div>
+              <p className="text-xs text-gray-500 text-center">
+                Supported: PDF, PPTX, PPT (Max 20MB)
+              </p>
+            </form>
+          </section>
+
+          {/* SECTION 2: Document List */}
+          <section className="bg-white rounded-2xl p-6 shadow-md border border-gray-100 flex-grow flex flex-col overflow-hidden">
+            <div className="flex justify-between items-center mb-4 flex-shrink-0">
+              <h2 className="text-lg font-bold text-gray-900">Your Documents</h2>
               <button
-                type="submit"
-                disabled={uploading || !file}
-                className="inline-flex justify-center items-center rounded-md bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-sm"
+                onClick={fetchDocuments}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-850"
               >
-                {uploading ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                    </svg>
-                    Uploading...
-                  </>
-                ) : (
-                  'Upload File'
-                )}
+                Refresh List
               </button>
             </div>
-            <p className="text-xs text-gray-500">
-              Supported file formats: PDF, PPTX, PPT (Max 20MB)
-            </p>
-          </form>
-        </section>
 
-        {/* SECTION 2: Document List */}
-        <section className="bg-white rounded-2xl p-6 shadow-md border border-gray-100">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold text-gray-900">Your Documents</h2>
-            <button
-              onClick={fetchDocuments}
-              className="text-sm font-medium text-indigo-650 hover:text-indigo-800 transition"
-            >
-              Refresh List
-            </button>
-          </div>
-
-          {loadingList && documents.length === 0 ? (
-            <div className="text-center py-8 text-sm text-gray-500">Loading documents...</div>
-          ) : documents.length === 0 ? (
-            <div className="text-center py-12 text-sm text-gray-500 border-2 border-dashed border-gray-200 rounded-xl">
-              No documents uploaded yet. Upload your first lecture note or slides above!
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Filename
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Type
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Uploaded At
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+            <div className="flex-grow overflow-y-auto">
+              {loadingList && documents.length === 0 ? (
+                <div className="text-center py-8 text-sm text-gray-500">Loading documents...</div>
+              ) : documents.length === 0 ? (
+                <div className="text-center py-12 text-sm text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
+                  No documents uploaded yet.
+                </div>
+              ) : (
+                <ul className="space-y-3">
                   {documents.map((doc) => {
                     const isSelected = selectedDocId === doc.id;
                     const isProcessed = doc.status === 'processed';
 
                     return (
-                      <tr
+                      <li
                         key={doc.id}
                         onClick={() => isProcessed && setSelectedDocId(doc.id)}
-                        className={`transition cursor-pointer ${
+                        className={`p-4 rounded-xl border text-left transition ${
+                          isProcessed ? 'cursor-pointer' : 'opacity-65 cursor-not-allowed'
+                        } ${
                           isSelected
-                            ? 'bg-indigo-50 hover:bg-indigo-100'
-                            : isProcessed
-                            ? 'hover:bg-gray-50'
-                            : 'opacity-60 cursor-not-allowed'
+                            ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500/20'
+                            : 'bg-white border-gray-200 hover:bg-gray-50'
                         }`}
                       >
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          <div className="flex items-center space-x-2">
-                            {isSelected && <span className="text-indigo-600">✓</span>}
-                            <span>{doc.filename}</span>
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="font-semibold text-sm text-gray-900 truncate">
+                            {doc.filename}
                           </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 uppercase">
-                          {doc.file_type}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
                           <span
-                            className={`inline-flex px-2 py-1 text-xs font-semibold leading-5 rounded-full ${
+                            className={`inline-flex px-2 py-0.5 text-2xs font-semibold rounded-full uppercase ${
                               doc.status === 'processed'
-                                ? 'bg-green-100 text-green-800'
+                                ? 'bg-green-50 text-green-700 border border-green-200'
                                 : doc.status === 'failed'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-yellow-100 text-yellow-800 animate-pulse'
+                                ? 'bg-red-50 text-red-700 border border-red-200'
+                                : 'bg-yellow-50 text-yellow-700 border border-yellow-200 animate-pulse'
                             }`}
                           >
                             {doc.status}
                           </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(doc.created_at).toLocaleString()}
-                        </td>
-                      </tr>
+                        </div>
+                        <div className="flex justify-between items-center mt-2 text-2xs text-gray-500">
+                          <span>Format: {doc.file_type}</span>
+                          <span>{new Date(doc.created_at).toLocaleDateString()}</span>
+                        </div>
+                      </li>
                     );
                   })}
-                </tbody>
-              </table>
+                </ul>
+              )}
             </div>
-          )}
+          </section>
+        </div>
+
+        {/* Right Column (Q&A Panel) - 7 Cols */}
+        <div className="lg:col-span-7 bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden flex flex-col min-h-[450px]">
           
-          {selectedDocId && (
-            <div className="mt-4 text-sm text-gray-700 bg-indigo-50/50 p-3 rounded-lg border border-indigo-100 flex justify-between items-center">
-              <span>
-                Selected Document ID: <strong className="font-mono text-indigo-700">{selectedDocId}</strong>
-              </span>
+          {/* Header */}
+          <div className="bg-gray-50 border-b border-gray-100 p-4 flex-shrink-0 flex justify-between items-center">
+            <div>
+              <h2 className="text-base font-bold text-gray-900">Document Q&amp;A Chat</h2>
+              {selectedDocId && (
+                <p className="text-xs text-indigo-700 truncate max-w-sm font-semibold">
+                  Talking to: {selectedDocName}
+                </p>
+              )}
+            </div>
+            {selectedDocId && (
               <button
                 onClick={() => setSelectedDocId(null)}
-                className="text-xs text-red-650 hover:text-red-850 font-semibold"
+                className="text-2xs font-bold text-red-600 hover:text-red-800"
               >
-                Clear Selection
+                Reset
               </button>
+            )}
+          </div>
+
+          {/* Chat area */}
+          {!selectedDocId ? (
+            <div className="flex-grow flex flex-col items-center justify-center p-8 text-center bg-gray-50/50">
+              <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center text-3xl mb-4 shadow-inner">
+                💬
+              </div>
+              <h3 className="text-base font-bold text-gray-900">No Document Selected</h3>
+              <p className="text-sm text-gray-500 mt-2 max-w-sm leading-relaxed">
+                Choose a fully processed slides or note document from the list on the left to start asking questions.
+              </p>
+            </div>
+          ) : (
+            <div className="flex-grow flex flex-col justify-between overflow-hidden">
+              
+              {/* Message History */}
+              <div className="flex-grow p-4 overflow-y-auto space-y-4">
+                {chatHistory.length === 0 && !asking && (
+                  <div className="text-center py-12 text-slate-400 text-xs italic">
+                    Type a question below to query the selected study material...
+                  </div>
+                )}
+
+                {chatHistory.map((chat, idx) => {
+                  const isRefusal = chat.answer === "I couldn't find this in your uploaded material.";
+                  
+                  return (
+                    <div key={idx} className="space-y-2">
+                      {/* Question (User) */}
+                      <div className="flex justify-end">
+                        <div className="bg-indigo-650 bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-md text-sm font-medium shadow-sm">
+                          {chat.question}
+                        </div>
+                      </div>
+
+                      {/* Answer (AI) */}
+                      <div className="flex justify-start">
+                        {chat.loading ? (
+                          <div className="bg-gray-100 text-gray-500 rounded-2xl rounded-tl-sm px-4 py-2.5 flex items-center space-x-2 text-sm shadow-sm">
+                            <span className="flex h-2 w-2 relative">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                            </span>
+                            <span>Thinking...</span>
+                          </div>
+                        ) : chat.error ? (
+                          <div className="bg-red-50 text-red-700 border border-red-150 rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-md text-sm shadow-sm">
+                            <strong className="block text-2xs uppercase tracking-wider text-red-650 font-bold mb-1">
+                              System Error
+                            </strong>
+                            {chat.error}
+                          </div>
+                        ) : (
+                          <div
+                            className={`rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-md text-sm leading-relaxed shadow-sm ${
+                              isRefusal
+                                ? 'bg-gray-50 text-gray-500 italic border border-gray-200'
+                                : 'bg-gray-100 text-gray-800'
+                            }`}
+                          >
+                            {chat.answer}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Chat Input form */}
+              <form onSubmit={handleAskSubmit} className="p-4 bg-gray-50 border-t border-gray-100 flex-shrink-0 flex gap-2">
+                <input
+                  type="text"
+                  required
+                  placeholder="Ask a question about the document..."
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  disabled={asking}
+                  className="flex-grow rounded-lg border border-gray-300 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-60 bg-white"
+                />
+                <button
+                  type="submit"
+                  disabled={asking || !question.trim()}
+                  className="rounded-lg bg-indigo-650 bg-indigo-600 text-white px-5 py-2.5 text-sm font-semibold hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 transition shadow-sm"
+                >
+                  Ask
+                </button>
+              </form>
+
             </div>
           )}
-        </section>
 
-      </main>
+        </div>
+
+      </div>
     </div>
   );
 };
