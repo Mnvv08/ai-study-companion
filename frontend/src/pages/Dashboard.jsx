@@ -16,7 +16,7 @@ const Dashboard = () => {
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
 
-  // Right Panel tab selection: 'chat' | 'notes' | 'flashcards' | 'mcqs'
+  // Right Panel tab selection: 'chat' | 'notes' | 'flashcards' | 'mcqs' | 'short_answer'
   const [activeTab, setActiveTab] = useState('chat');
 
   // Q&A Chat states
@@ -47,6 +47,15 @@ const Dashboard = () => {
   const [mcqAnswers, setMcqAnswers] = useState({}); // questionId -> optionIndex (0-3)
   const [quizResult, setQuizResult] = useState(null);
   const [submittingQuiz, setSubmittingQuiz] = useState(false);
+
+  // Short Answer states
+  const [sessionShortAnswers, setSessionShortAnswers] = useState({}); // docId -> { quiz_id, questions: [] }
+  const [saLoading, setSaLoading] = useState(false);
+  const [saError, setSaError] = useState('');
+  const [currentSaIndex, setCurrentSaIndex] = useState(0);
+  const [saAnswers, setSaAnswers] = useState({}); // questionId -> studentText
+  const [saQuizResult, setSaQuizResult] = useState(null);
+  const [submittingSaQuiz, setSubmittingSaQuiz] = useState(false);
 
   // 1. Fetch documents list on mount
   const fetchDocuments = async () => {
@@ -104,12 +113,16 @@ const Dashboard = () => {
     setNotesError('');
     setFlashcardsError('');
     setMcqsError('');
+    setSaError('');
     setCurrentCardIndex(0);
     setCurrentMcqIndex(0);
+    setCurrentSaIndex(0);
     setFlipped(false);
     setTopicFilter('All');
     setMcqAnswers({});
+    setSaAnswers({});
     setQuizResult(null);
+    setSaQuizResult(null);
     setActiveTab('chat'); // default to chat on document change
   }, [selectedDocId]);
 
@@ -336,10 +349,73 @@ const Dashboard = () => {
     }
   };
 
+  // 9. Handle Short-Answer Quiz Generation & Submission
+  const triggerSAGeneration = async (force = false) => {
+    if (!selectedDocId) return;
+    setSaLoading(true);
+    setSaError('');
+    setCurrentSaIndex(0);
+    setSaAnswers({});
+    setSaQuizResult(null);
+
+    try {
+      const response = await apiClient.post('/short-answer/generate', {
+        document_id: selectedDocId,
+        force_regenerate: force,
+      });
+
+      setSessionShortAnswers((prev) => ({
+        ...prev,
+        [selectedDocId]: {
+          quiz_id: response.data.quiz_id,
+          questions: response.data.questions,
+        },
+      }));
+    } catch (err) {
+      console.error(err);
+      setSaError(
+        err.response?.data?.detail || 'Failed to generate Short-Answer practice quiz. Please retry.'
+      );
+    } finally {
+      setSaLoading(false);
+    }
+  };
+
+  const handleSaQuizSubmit = async () => {
+    const activeSaQuiz = sessionShortAnswers[selectedDocId];
+    if (!selectedDocId || !activeSaQuiz) return;
+
+    setSubmittingSaQuiz(true);
+    setSaError('');
+
+    const formattedAnswers = activeSaQuiz.questions.map((q) => {
+      const textVal = saAnswers[q.id] || '';
+      return {
+        question_id: q.id,
+        student_answer: textVal.trim(),
+      };
+    });
+
+    try {
+      const response = await apiClient.post(`/quizzes/${activeSaQuiz.quiz_id}/submit`, {
+        answers: formattedAnswers,
+      });
+      setSaQuizResult(response.data);
+    } catch (err) {
+      console.error(err);
+      setSaError(
+        err.response?.data?.detail || 'Failed to submit quiz results. Please try again.'
+      );
+    } finally {
+      setSubmittingSaQuiz(false);
+    }
+  };
+
   // Caching getters
   const currentNotes = sessionNotes[selectedDocId];
   const allFlashcards = sessionFlashcards[selectedDocId] || [];
   const activeQuiz = sessionMCQs[selectedDocId];
+  const activeSaQuiz = sessionShortAnswers[selectedDocId];
 
   // Filter flashcards by topic dropdown
   const uniqueTopics = ['All', ...new Set(allFlashcards.map((c) => c.topic))];
@@ -509,7 +585,7 @@ const Dashboard = () => {
           </section>
         </div>
 
-        {/* Right Column (Q&A / Notes / Flashcards / MCQ Tabs Panel) - 7 Cols */}
+        {/* Right Column (Q&A / Notes / Flashcards / MCQ / Short Answer Tabs Panel) - 7 Cols */}
         <div className="lg:col-span-7 bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden flex flex-col min-h-[450px]">
           
           {/* Header & Tabs */}
@@ -556,6 +632,16 @@ const Dashboard = () => {
                 >
                   MCQ Quiz
                 </button>
+                <button
+                  onClick={() => setActiveTab('short_answer')}
+                  className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
+                    activeTab === 'short_answer'
+                      ? 'border-indigo-600 text-indigo-700'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Short-Answer
+                </button>
               </div>
               {selectedDocId && (
                 <p className="text-2xs text-gray-500 mt-1 truncate max-w-sm">
@@ -581,7 +667,7 @@ const Dashboard = () => {
               </div>
               <h3 className="text-base font-bold text-gray-900">No Document Selected</h3>
               <p className="text-sm text-gray-500 mt-2 max-w-sm leading-relaxed">
-                Select a processed document on the left to start asking questions, generate study notes, practice flashcards, or take MCQ tests.
+                Select a processed document on the left to start asking questions, generate study notes, practice flashcards, or take MCQ/Short-Answer tests.
               </p>
             </div>
           ) : activeTab === 'chat' ? (
@@ -600,7 +686,7 @@ const Dashboard = () => {
                   return (
                     <div key={idx} className="space-y-2">
                       <div className="flex justify-end">
-                        <div className="bg-indigo-650 bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-md text-sm font-medium shadow-sm">
+                        <div className="bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-md text-sm font-medium shadow-sm">
                           {chat.question}
                         </div>
                       </div>
@@ -902,7 +988,7 @@ const Dashboard = () => {
                 </div>
               )}
             </div>
-          ) : (
+          ) : activeTab === 'mcqs' ? (
             /* TAB 4: MCQ Quiz Interface */
             <div className="flex-grow flex flex-col overflow-hidden bg-gray-50/30">
               
@@ -941,8 +1027,6 @@ const Dashboard = () => {
 
               {activeQuiz && !mcqsLoading && (
                 <div className="flex-grow flex flex-col p-6 justify-between overflow-y-auto">
-                  
-                  {/* Control Subheader */}
                   <div className="bg-white border rounded-xl p-3 flex justify-between items-center flex-shrink-0 text-xs shadow-2xs mb-4">
                     <span className="font-semibold text-gray-800">
                       Quiz Mode: Practice MCQ Test
@@ -961,9 +1045,7 @@ const Dashboard = () => {
                     </div>
                   )}
 
-                  {/* Quiz Taking / Results Rendering */}
                   {!quizResult ? (
-                    /* QUIZ STATE: Taking the test */
                     <div className="flex-grow flex flex-col justify-between">
                       {activeQuiz.questions.length === 0 ? (
                         <div className="text-center py-12 text-gray-500 text-xs italic">
@@ -971,8 +1053,6 @@ const Dashboard = () => {
                         </div>
                       ) : (
                         <div className="space-y-6">
-                          
-                          {/* Active Question details */}
                           {(() => {
                             const q = activeQuiz.questions[currentMcqIndex];
                             const selectedOptionIdx = mcqAnswers[q.id];
@@ -1020,7 +1100,6 @@ const Dashboard = () => {
                             );
                           })()}
 
-                          {/* Navigation & Submit buttons */}
                           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-100">
                             <div className="flex items-center space-x-3">
                               <button
@@ -1056,16 +1135,12 @@ const Dashboard = () => {
                             Note: You can submit the quiz even if some questions are left unanswered. 
                             Unanswered questions will simply be marked incorrect.
                           </p>
-
                         </div>
                       )}
                     </div>
                   ) : (
-                    /* GRADED STATE: Results review page */
                     <div className="space-y-6">
-                      
-                      {/* Score Card Banner */}
-                      <div className="bg-indigo-650 bg-indigo-600 text-white rounded-2xl p-6 text-center shadow-md relative overflow-hidden">
+                      <div className="bg-indigo-600 text-white rounded-2xl p-6 text-center shadow-md relative overflow-hidden">
                         <div className="absolute -top-12 -left-12 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
                         <div className="relative">
                           <h3 className="text-xs uppercase tracking-widest font-semibold text-indigo-200">
@@ -1086,7 +1161,6 @@ const Dashboard = () => {
                         </div>
                       </div>
 
-                      {/* Detailed Question Review List */}
                       <div className="space-y-4">
                         <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
                           Review Answers
@@ -1135,7 +1209,7 @@ const Dashboard = () => {
                                           isCorrectOpt
                                             ? 'bg-green-100 border-green-300 text-green-900'
                                             : isStudentChosen
-                                            ? 'bg-red-105 bg-red-100 border-red-300 text-red-900'
+                                            ? 'bg-red-100 border-red-300 text-red-900'
                                             : 'bg-white border-gray-200 text-gray-600'
                                         }`}
                                       >
@@ -1152,6 +1226,244 @@ const Dashboard = () => {
                                     );
                                   })}
                                 </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* TAB 5: Short Answer Quiz Interface */
+            <div className="flex-grow flex flex-col overflow-hidden bg-gray-50/30">
+              
+              {!activeSaQuiz && !saLoading && (
+                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
+                  <h3 className="text-base font-bold text-gray-900">Short-Answer Quiz Not Generated</h3>
+                  <p className="text-xs text-gray-500 mt-2 max-w-xs leading-relaxed">
+                    Test your understanding with active writing. Submit short answers to be graded against course materials.
+                  </p>
+
+                  {saError && (
+                    <div className="mt-4 max-w-sm rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
+                      {saError}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => triggerSAGeneration(false)}
+                    className="mt-5 rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md transition"
+                  >
+                    Generate Short-Answer Quiz
+                  </button>
+                </div>
+              )}
+
+              {saLoading && (
+                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
+                  <svg className="animate-spin h-10 w-10 text-indigo-600 mb-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  <h4 className="text-sm font-bold text-gray-900">Formulating Short Questions...</h4>
+                  <p className="text-2xs text-gray-500 mt-1">Creating essay-style test questions requiring sentence answers...</p>
+                </div>
+              )}
+
+              {activeSaQuiz && !saLoading && (
+                <div className="flex-grow flex flex-col p-6 justify-between overflow-y-auto">
+                  
+                  {/* Control Subheader */}
+                  <div className="bg-white border rounded-xl p-3 flex justify-between items-center flex-shrink-0 text-xs shadow-2xs mb-4">
+                    <span className="font-semibold text-gray-800">
+                      Quiz Mode: Written Short-Answer Test
+                    </span>
+                    <button
+                      onClick={() => triggerSAGeneration(true)}
+                      className="text-2xs text-indigo-600 hover:text-indigo-850 font-bold hover:underline"
+                    >
+                      Regenerate Quiz
+                    </button>
+                  </div>
+
+                  {saError && (
+                    <div className="mb-4 rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
+                      ⚠️ {saError}
+                    </div>
+                  )}
+
+                  {/* Quiz taking or Results rendering */}
+                  {!saQuizResult ? (
+                    /* QUIZ STATE: Taking the written quiz */
+                    <div className="flex-grow flex flex-col justify-between">
+                      {activeSaQuiz.questions.length === 0 ? (
+                        <div className="text-center py-12 text-gray-500 text-xs italic">
+                          No questions generated for this document.
+                        </div>
+                      ) : (
+                        <div className="space-y-6">
+                          
+                          {(() => {
+                            const q = activeSaQuiz.questions[currentSaIndex];
+                            const studentAnsText = saAnswers[q.id] || '';
+
+                            return (
+                              <div className="space-y-4">
+                                <div className="flex justify-between items-center text-3xs font-bold uppercase tracking-wider text-gray-400">
+                                  <span>Concept: {q.topic}</span>
+                                  <span>Question {currentSaIndex + 1} of {activeSaQuiz.questions.length}</span>
+                                </div>
+                                <h3 className="text-sm md:text-base font-bold text-gray-900 leading-normal">
+                                  {q.question}
+                                </h3>
+
+                                <div className="pt-2">
+                                  <label htmlFor={`sa-input-${q.id}`} className="sr-only">
+                                    Your Answer
+                                  </label>
+                                  <textarea
+                                    id={`sa-input-${q.id}`}
+                                    rows={4}
+                                    placeholder="Type your answer in 1-3 sentences..."
+                                    value={studentAnsText}
+                                    onChange={(e) => handleSaTextChange(q.id, e.target.value)}
+                                    className="block w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Navigation & Submit buttons */}
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-100">
+                            <div className="flex items-center space-x-3">
+                              <button
+                                onClick={() => setCurrentSaIndex((prev) => Math.max(prev - 1, 0))}
+                                disabled={currentSaIndex === 0}
+                                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
+                              >
+                                ◀ Previous
+                              </button>
+                              <button
+                                onClick={() =>
+                                  setCurrentSaIndex((prev) =>
+                                    Math.min(prev + 1, activeSaQuiz.questions.length - 1)
+                                  )
+                                }
+                                disabled={currentSaIndex === activeSaQuiz.questions.length - 1}
+                                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
+                              >
+                                Next ▶
+                              </button>
+                            </div>
+
+                            <button
+                              onClick={handleSaQuizSubmit}
+                              disabled={submittingSaQuiz}
+                              className="w-full sm:w-auto rounded-lg bg-indigo-600 text-white px-6 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md disabled:opacity-50 transition"
+                            >
+                              {submittingSaQuiz ? 'Submitting...' : 'Submit Quiz'}
+                            </button>
+                          </div>
+
+                          <p className="text-3xs text-gray-400 text-center">
+                            Note: You can submit the quiz even with blank fields. Unanswered items will simply be marked incorrect.
+                          </p>
+
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* GRADED STATE: Results review page */
+                    <div className="space-y-6">
+                      
+                      {/* Score Card Banner */}
+                      <div className="bg-indigo-600 text-white rounded-2xl p-6 text-center shadow-md relative overflow-hidden">
+                        <div className="absolute -top-12 -left-12 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
+                        <div className="relative">
+                          <h3 className="text-xs uppercase tracking-widest font-semibold text-indigo-200">
+                            Quiz Completed (Keyword Graded)
+                          </h3>
+                          <div className="text-3xl md:text-4xl font-black mt-1">
+                            {Math.round(saQuizResult.score * 100)}%
+                          </div>
+                          <p className="text-xs text-indigo-150 mt-1">
+                            Score: <strong>{saQuizResult.correct_count}</strong> / {saQuizResult.questions_count} correct
+                          </p>
+                          <button
+                            onClick={() => triggerSAGeneration(true)}
+                            className="mt-4 inline-flex items-center rounded-lg bg-white/20 hover:bg-white/30 text-white px-4 py-1.5 text-xs font-bold transition"
+                          >
+                            Retake New Quiz
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Detailed Question Review List with Comparison */}
+                      <div className="space-y-4">
+                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                          Review Written Answers
+                        </h4>
+
+                        <div className="space-y-4">
+                          {saQuizResult.feedback.map((feed, fIdx) => {
+                            return (
+                              <div
+                                key={feed.question_id}
+                                className={`rounded-xl border p-4 text-left shadow-2xs space-y-3 ${
+                                  feed.is_correct
+                                    ? 'bg-green-50/20 border-green-200'
+                                    : 'bg-red-50/20 border-red-200'
+                                }`}
+                              >
+                                <div className="flex justify-between items-center text-3xs font-bold uppercase tracking-wider">
+                                  <span className="text-gray-400">Question {fIdx + 1}</span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full ${
+                                      feed.is_correct
+                                        ? 'bg-green-100 text-green-800'
+                                        : 'bg-red-100 text-red-800'
+                                    }`}
+                                  >
+                                    {feed.is_correct ? 'Correct' : 'Incorrect'}
+                                  </span>
+                                </div>
+                                <h5 className="text-xs md:text-sm font-bold text-gray-900">
+                                  {feed.question_text}
+                                </h5>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                                  {/* Student answer card */}
+                                  <div className="bg-white p-3 rounded-lg border border-gray-200">
+                                    <div className="text-3xs font-bold uppercase tracking-wider text-gray-400 mb-1">
+                                      Your Answer
+                                    </div>
+                                    <p className={`text-2xs md:text-xs leading-normal ${
+                                      feed.student_answer ? 'text-gray-800' : 'text-gray-400 italic'
+                                    }`}>
+                                      {feed.student_answer || '(Empty Submission)'}
+                                    </p>
+                                  </div>
+
+                                  {/* Model answer card */}
+                                  <div className="bg-indigo-50/30 p-3 rounded-lg border border-indigo-150 border-indigo-100">
+                                    <div className="text-3xs font-bold uppercase tracking-wider text-indigo-500 mb-1">
+                                      Model Reference Answer
+                                    </div>
+                                    <p className="text-2xs md:text-xs text-indigo-900 leading-normal font-semibold">
+                                      {feed.correct_answer}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="text-3xs text-gray-400 leading-relaxed italic bg-white/40 p-2 rounded border border-gray-100 mt-2">
+                                  * Note: Written answers are graded using case-insensitive keyword inclusion. 
+                                  Please compare your response to the Model Reference Answer above to judge your accuracy.
+                                </div>
+
                               </div>
                             );
                           })}
