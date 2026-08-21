@@ -23,6 +23,8 @@ from app.schemas.generation import (
     GenerateFlashcardsResponse,
     GenerateMCQRequest,
     GenerateMCQResponse,
+    GenerateShortAnswerRequest,
+    GenerateShortAnswerResponse,
     GenerateShortQRequest,
     GenerateShortQResponse,
 )
@@ -167,21 +169,38 @@ def generate_mcqs(
 
 
 @router.post(
+    "/short-answer/generate",
+    response_model=GenerateShortAnswerResponse,
+    summary="Generate short-answer exam questions with model answers",
+)
+@router.post(
     "/shortq/generate",
-    response_model=GenerateShortQResponse,
-    summary="Generate short-answer exam questions",
+    response_model=GenerateShortAnswerResponse,
+    include_in_schema=False,
+)
+@router.post(
+    "/generate/short-answer",
+    response_model=GenerateShortAnswerResponse,
+    include_in_schema=False,
 )
 @router.post(
     "/generate/shortq",
-    response_model=GenerateShortQResponse,
+    response_model=GenerateShortAnswerResponse,
     include_in_schema=False,
 )
 def generate_short_questions(
-    request: GenerateShortQRequest,
+    request: GenerateShortAnswerRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Generate short-answer conceptual exam questions with model answers and evaluation points."""
+    """
+    Generate short-answer conceptual exam questions.
+
+    Rules:
+      - Strictly grounded in document material.
+      - Requires 1-3 sentence answers with a concise model answer.
+      - Tagged with topic for weak-area tracking.
+    """
     try:
         doc_id = request.target_document_id
     except ValueError as val_err:
@@ -191,10 +210,17 @@ def generate_short_questions(
     llm_service = LLMClientService()
 
     try:
-        questions = llm_service.generate_short_questions(text_content=content, count=request.count)
-        return GenerateShortQResponse(document_id=db_doc.id, questions=questions)
+        questions = llm_service.generate_short_questions(text_content=content)
+        return GenerateShortAnswerResponse(document_id=db_doc.id, questions=questions)
+    except RuntimeError as llm_err:
+        logger.error(f"LLM short-answer generation error for document {db_doc.id}: {llm_err}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI service error during short-answer generation: {str(llm_err)}",
+        )
     except Exception as e:
+        logger.error(f"Unexpected short-answer generation error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate short questions: {str(e)}",
+            detail="Failed to generate short-answer questions.",
         )

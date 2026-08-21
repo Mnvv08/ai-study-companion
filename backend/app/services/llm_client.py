@@ -207,19 +207,22 @@ class LLMClientService:
             logger.error(f"MCQ generation failed: {e}")
             raise RuntimeError(f"LLM MCQ generation failed: {str(e)}")
 
-    def generate_short_questions(self, text_content: str, count: int = 5) -> List[Dict[str, Any]]:
-        """Generates conceptual short-answer questions with key evaluation points."""
+    def generate_short_questions(self, text_content: str) -> List[Dict[str, Any]]:
+        """Generates conceptual short-answer exam questions with model answers and topic labels."""
         system_prompt = (
-            "You are an examiner writing short-answer university exam questions.\n"
+            "You are a study assistant that creates short-answer exam questions from study material.\n"
             "Rules:\n"
-            "- Formulate analytical/conceptual questions grounded in the text.\n"
-            "- 'sample_answer' should be a model student response (2-4 sentences).\n"
-            "- 'key_points' should be bullet points required for full credit.\n"
-            "- Return JSON in this exact structure:\n"
-            '{"questions": [{"id": 1, "question": "string", "sample_answer": "string", "key_points": ["string"]}]}'
+            "- Use ONLY the provided content. Do not add outside facts.\n"
+            "- Each question should require a 1-3 sentence answer, not a single word and not an essay.\n"
+            "- Include a concise model answer for each question, based strictly on the material.\n"
+            "- Decide the number of questions based on how much distinct, testable content exists\n"
+            "  in the material.\n"
+            "- Tag each question with a short topic label.\n"
+            "- Return the output in the following JSON structure exactly:\n"
+            '{ "questions": [{"question": "string", "model_answer": "string", "topic": "string"}] }'
         )
 
-        user_prompt = f"Generate exactly {count} short-answer questions from this text:\n\n{text_content[:15000]}"
+        user_prompt = f'Study Material:\n"""\n{text_content[:20000]}\n"""'
 
         try:
             response = self.client.chat.completions.create(
@@ -229,12 +232,38 @@ class LLMClientService:
                     {"role": "user", "content": user_prompt},
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.4,
+                temperature=0.3,
             )
-            result = json.loads(response.choices[0].message.content)
-            return result.get("questions", [])
+            raw_text = response.choices[0].message.content or "{}"
+            data = extract_and_parse_json(raw_text)
+
+            if not isinstance(data, dict):
+                raise ValueError("Parsed JSON root is not an object.")
+
+            raw_questions = data.get("questions", [])
+            valid_questions = []
+
+            for item in raw_questions:
+                if not isinstance(item, dict):
+                    continue
+
+                q_text = str(item.get("question", "")).strip()
+                ans_text = str(item.get("model_answer", item.get("sample_answer", ""))).strip()
+                topic = str(item.get("topic", "General")).strip() or "General"
+
+                if q_text and ans_text:
+                    valid_questions.append({
+                        "question": q_text,
+                        "model_answer": ans_text,
+                        "topic": topic,
+                    })
+                else:
+                    logger.warning(f"Dropping incomplete short-answer question item: {item}")
+
+            return valid_questions
         except Exception as e:
-            raise RuntimeError(f"LLM short questions generation failed: {str(e)}")
+            logger.error(f"Short answer question generation failed: {e}")
+            raise RuntimeError(f"LLM short-answer question generation failed: {str(e)}")
 
     def answer_question_with_context(self, question: str, context_chunks: List[str]) -> str:
         """Answers a user question based strictly on retrieved context chunks (RAG)."""

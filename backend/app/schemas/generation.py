@@ -63,14 +63,13 @@ class GenerateMCQResponse(BaseModel):
 
 
 # ── Short-Answer Questions (Phase 2 Step 3) ───────────────────────
-class ShortQuestionItem(BaseModel):
-    question: str
-    sample_answer: str
-    key_points: List[str]
-    topic: Optional[str] = Field(default="General", description="Topic category for analytics")
+class ShortAnswerItem(BaseModel):
+    question: str = Field(..., description="Short-answer exam question requiring 1-3 sentences")
+    model_answer: str = Field(..., description="Concise model answer based strictly on the material")
+    topic: str = Field(default="General", description="Topic label representing the tested concept")
 
 
-class GenerateShortQRequest(BaseModel):
+class GenerateShortAnswerRequest(BaseModel):
     document_id: Optional[str] = None
     file_id: Optional[str] = None
 
@@ -82,6 +81,12 @@ class GenerateShortQRequest(BaseModel):
         return doc_id
 
 
-class GenerateShortQResponse(BaseModel):
+class GenerateShortAnswerResponse(BaseModel):
     document_id: str
-    questions: List[ShortQuestionItem]
+    questions: List[ShortAnswerItem]
+
+
+# Backwards compatibility aliases
+ShortQuestionItem = ShortAnswerItem
+GenerateShortQRequest = GenerateShortAnswerRequest
+GenerateShortQResponse = GenerateShortAnswerResponse
