@@ -16,7 +16,7 @@ from app.db.session import get_db
 from app.core.security import create_access_token, get_password_hash
 from app.models.user import User
 from app.models.file import Document
-from app.models.quiz import Quiz, Question
+from app.models.quiz import Quiz, Question, QuizAttempt, AttemptAnswer
 from app.services.llm_client import LLMClientService
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -269,3 +269,143 @@ def test_get_quiz_non_existent_returns_404(auth_headers):
         headers=auth_headers
     )
     assert response.status_code == 404
+
+
+def test_submit_mcq_quiz_success(auth_headers, sample_document):
+    """Verify that submitting MCQ answers computes correct score and persists attempts."""
+    db = TestingSessionLocal()
+    quiz = Quiz(
+        id="mcq-quiz-submit",
+        document_id=sample_document.id,
+        quiz_type="mcq"
+    )
+    db.add(quiz)
+    q1 = Question(
+        id="mq-1",
+        quiz_id="mcq-quiz-submit",
+        question_text="Q1?",
+        options=["A", "B", "C", "D"],
+        correct_answer="1",  # Index 1
+        topic_tag="Biology"
+    )
+    q2 = Question(
+        id="mq-2",
+        quiz_id="mcq-quiz-submit",
+        question_text="Q2?",
+        options=["A", "B", "C", "D"],
+        correct_answer="3",  # Index 3
+        topic_tag="Chemistry"
+    )
+    db.add(q1)
+    db.add(q2)
+    db.commit()
+    db.close()
+
+    # Submit 1 correct, 1 incorrect
+    payload = {
+        "answers": [
+            {"question_id": "mq-1", "student_answer": "1"},  # Correct
+            {"question_id": "mq-2", "student_answer": "0"}   # Incorrect
+        ]
+    }
+
+    response = client.post(
+        "/quizzes/mcq-quiz-submit/submit",
+        headers=auth_headers,
+        json=payload
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "attempt_id" in data
+    assert data["quiz_id"] == "mcq-quiz-submit"
+    assert data["score"] == 0.5
+    assert data["questions_count"] == 2
+    assert data["correct_count"] == 1
+    assert len(data["feedback"]) == 2
+
+    # Check feedback
+    feedback_q1 = next(item for item in data["feedback"] if item["question_id"] == "mq-1")
+    assert feedback_q1["is_correct"] is True
+    assert feedback_q1["student_answer"] == "1"
+    assert feedback_q1["correct_answer"] == "1"
+
+    feedback_q2 = next(item for item in data["feedback"] if item["question_id"] == "mq-2")
+    assert feedback_q2["is_correct"] is False
+    assert feedback_q2["student_answer"] == "0"
+    assert feedback_q2["correct_answer"] == "3"
+
+    # Verify database state
+    db = TestingSessionLocal()
+    attempt = db.query(QuizAttempt).filter(QuizAttempt.id == data["attempt_id"]).first()
+    assert attempt is not None
+    assert attempt.score == 0.5
+    assert len(attempt.answers) == 2
+    db.close()
+
+
+def test_submit_short_answer_quiz_success(auth_headers, sample_document):
+    """Verify that submitting short-answer questions does keyword matching."""
+    db = TestingSessionLocal()
+    quiz = Quiz(
+        id="sa-quiz-submit",
+        document_id=sample_document.id,
+        quiz_type="short_answer"
+    )
+    db.add(quiz)
+    q1 = Question(
+        id="sa-1",
+        quiz_id="sa-quiz-submit",
+        question_text="What is ATP?",
+        options=None,
+        correct_answer="Adenosine Triphosphate",
+        topic_tag="Biology"
+    )
+    db.add(q1)
+    db.commit()
+    db.close()
+
+    # Submit answer containing keyword (substring)
+    payload = {
+        "answers": [
+            {"question_id": "sa-1", "student_answer": "It is adenosine triphosphate"}
+        ]
+    }
+
+    response = client.post(
+        "/quizzes/sa-quiz-submit/submit",
+        headers=auth_headers,
+        json=payload
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["score"] == 1.0
+    assert data["correct_count"] == 1
+    assert data["feedback"][0]["is_correct"] is True
+
+
+def test_submit_quiz_other_user_document_404(other_auth_headers, sample_document):
+    """Verify that submitting answers to another user's quiz returns 404."""
+    db = TestingSessionLocal()
+    quiz = Quiz(
+        id="sa-quiz-other-submit",
+        document_id=sample_document.id,
+        quiz_type="short_answer"
+    )
+    db.add(quiz)
+    db.commit()
+    db.close()
+
+    payload = {
+        "answers": []
+    }
+
+    response = client.post(
+        "/quizzes/sa-quiz-other-submit/submit",
+        headers=other_auth_headers,
+        json=payload
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Quiz not found."
+

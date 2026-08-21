@@ -50,3 +50,49 @@ class Question(Base):
 
     # Relationships
     quiz: Mapped["Quiz"] = relationship("Quiz", back_populates="questions")
+
+
+class QuizAttempt(Base):
+    __tablename__ = "quiz_attempts"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    quiz_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("quizzes.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    score: Mapped[float] = mapped_column(nullable=False)  # score as percentage or fraction (e.g. 0.0 to 1.0)
+    attempted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship("User")
+    quiz: Mapped["Quiz"] = relationship("Quiz")
+    answers: Mapped[List["AttemptAnswer"]] = relationship(
+        "AttemptAnswer", back_populates="attempt", cascade="all, delete-orphan"
+    )
+
+
+class AttemptAnswer(Base):
+    __tablename__ = "attempt_answers"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    attempt_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("quiz_attempts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    question_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    student_answer: Mapped[str] = mapped_column(Text, nullable=False)
+    is_correct: Mapped[bool] = mapped_column(nullable=False)
+
+    # Relationships
+    attempt: Mapped["QuizAttempt"] = relationship("QuizAttempt", back_populates="answers")
+    question: Mapped["Question"] = relationship("Question")
+
