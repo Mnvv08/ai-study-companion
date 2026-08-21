@@ -41,12 +41,29 @@ class Settings(BaseSettings):
     ALGORITHM: str = Field(default="HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=60)
 
-    # ── LLM API ──────────────────────────────────────────────────
+    # ── xAI / Grok (Text Generation) ───────────────────────────────
+    # xAI's API is OpenAI-compatible for chat completions, so we reuse
+    # the openai Python SDK but point it at xAI's base URL.
+    XAI_API_KEY: str = Field(
+        default="xai-placeholder",
+        description="xAI API key for Grok chat completions (text generation only)."
+    )
+    XAI_BASE_URL: str = Field(
+        default="https://api.x.ai/v1",
+        description="xAI API base URL. Default is the production endpoint."
+    )
+    GROK_MODEL: str = Field(
+        default="grok-3-mini",
+        description="Grok model name for text generation. Configurable to swap models without code changes."
+    )
+
+    # ── OpenAI (Embeddings Only) ─────────────────────────────────
+    # OpenAI is still used for embeddings since xAI does not offer
+    # an embeddings endpoint. Text generation no longer uses this key.
     OPENAI_API_KEY: str = Field(
         default="sk-placeholder",
-        description="OpenAI API key used for completions and embeddings."
+        description="OpenAI API key used ONLY for embeddings (not text generation)."
     )
-    LLM_MODEL: str = Field(default="gpt-4o-mini")
     EMBEDDING_MODEL: str = Field(default="text-embedding-3-small")
 
     # ── ChromaDB ─────────────────────────────────────────────────

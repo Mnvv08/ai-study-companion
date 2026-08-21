@@ -1,7 +1,7 @@
 import re
 import json
 import logging
-from openai import OpenAI
+from openai import OpenAI, AuthenticationError, RateLimitError, APIConnectionError, APIStatusError
 from typing import Dict, Any, List
 
 from app.core.config import settings
@@ -32,10 +32,56 @@ def extract_and_parse_json(content: str) -> Dict[str, Any]:
         raise ValueError(f"No valid JSON object found in response: {cleaned[:100]}")
 
 
+def _handle_provider_error(e: Exception, operation: str) -> RuntimeError:
+    """
+    Translate provider-specific errors into clear RuntimeError messages.
+
+    The OpenAI Python SDK raises the same exception types regardless of
+    which provider base_url points to (OpenAI, xAI, Azure, etc.), so
+    these catches work for xAI/Grok out of the box.
+    """
+    if isinstance(e, AuthenticationError):
+        logger.error(f"xAI/Grok auth failure during {operation}: {e}")
+        return RuntimeError(
+            f"LLM authentication failed — check XAI_API_KEY in .env. ({operation})"
+        )
+    elif isinstance(e, RateLimitError):
+        logger.warning(f"xAI/Grok rate limit hit during {operation}: {e}")
+        return RuntimeError(
+            f"LLM rate limit exceeded — please retry in a moment. ({operation})"
+        )
+    elif isinstance(e, APIConnectionError):
+        logger.error(f"xAI/Grok connection failure during {operation}: {e}")
+        return RuntimeError(
+            f"Cannot reach xAI API — check network/XAI_BASE_URL. ({operation})"
+        )
+    elif isinstance(e, APIStatusError):
+        logger.error(f"xAI/Grok API error {e.status_code} during {operation}: {e}")
+        return RuntimeError(
+            f"LLM returned HTTP {e.status_code} during {operation}: {e.message}"
+        )
+    else:
+        logger.error(f"Unexpected LLM error during {operation}: {e}")
+        return RuntimeError(f"LLM {operation} failed: {str(e)}")
+
+
 class LLMClientService:
+    """
+    Text generation service powered by xAI's Grok models.
+
+    Uses the OpenAI Python SDK pointed at xAI's base URL (https://api.x.ai/v1).
+    This works because xAI exposes an OpenAI-compatible chat completions API.
+
+    NOTE: This client is for TEXT GENERATION only. Embeddings are handled
+    separately by VectorStoreService using the OpenAI embeddings API.
+    """
+
     def __init__(self):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        self.model = settings.LLM_MODEL
+        self.client = OpenAI(
+            api_key=settings.XAI_API_KEY,
+            base_url=settings.XAI_BASE_URL,
+        )
+        self.model = settings.GROK_MODEL
 
     def generate_study_notes(self, text_content: str) -> Dict[str, Any]:
         """Generates structured, exam-ready study notes in JSON format."""
@@ -77,8 +123,7 @@ class LLMClientService:
                 "key_terms": list(data.get("key_terms", [])),
             }
         except Exception as e:
-            logger.error(f"Study notes generation failed: {e}")
-            raise RuntimeError(f"LLM study notes generation failed: {str(e)}")
+            raise _handle_provider_error(e, "study notes generation")
 
     def generate_flashcards(self, text_content: str) -> List[Dict[str, Any]]:
         """Generates active-recall flashcards from study material with topic classification."""
@@ -127,8 +172,7 @@ class LLMClientService:
 
             return cleaned_cards
         except Exception as e:
-            logger.error(f"Flashcard generation failed: {e}")
-            raise RuntimeError(f"LLM flashcard generation failed: {str(e)}")
+            raise _handle_provider_error(e, "flashcard generation")
 
     def generate_mcqs(self, text_content: str) -> List[Dict[str, Any]]:
         """Generates Multiple Choice Questions with 4 options, correct_index, and topic tags."""
@@ -204,8 +248,7 @@ class LLMClientService:
 
             return valid_questions
         except Exception as e:
-            logger.error(f"MCQ generation failed: {e}")
-            raise RuntimeError(f"LLM MCQ generation failed: {str(e)}")
+            raise _handle_provider_error(e, "MCQ generation")
 
     def generate_short_questions(self, text_content: str) -> List[Dict[str, Any]]:
         """Generates conceptual short-answer exam questions with model answers and topic labels."""
@@ -262,8 +305,7 @@ class LLMClientService:
 
             return valid_questions
         except Exception as e:
-            logger.error(f"Short answer question generation failed: {e}")
-            raise RuntimeError(f"LLM short-answer question generation failed: {str(e)}")
+            raise _handle_provider_error(e, "short-answer question generation")
 
     def answer_question_with_context(self, question: str, context_chunks: List[str]) -> str:
         """Answers a user question based strictly on retrieved context chunks (RAG)."""
@@ -292,5 +334,4 @@ class LLMClientService:
             content = response.choices[0].message.content
             return content.strip() if content else "I couldn't find this in your uploaded material."
         except Exception as e:
-            logger.error(f"OpenAI ChatCompletion failure: {e}")
-            raise RuntimeError(f"LLM Q&A generation failed: {str(e)}")
+            raise _handle_provider_error(e, "RAG Q&A")
