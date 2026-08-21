@@ -113,9 +113,14 @@ def generate_flashcards(
 
 
 @router.post(
+    "/mcqs/generate",
+    response_model=GenerateMCQResponse,
+    summary="Generate MCQs with 4 options and correct_index",
+)
+@router.post(
     "/mcq/generate",
     response_model=GenerateMCQResponse,
-    summary="Generate MCQs with options and explanations",
+    include_in_schema=False,
 )
 @router.post(
     "/generate/mcq",
@@ -127,7 +132,15 @@ def generate_mcqs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Generate Multiple Choice Questions (MCQs) with 4 options and detailed explanations."""
+    """
+    Generate Multiple Choice Questions (MCQs).
+
+    Rules:
+      - Strictly grounded in document material.
+      - Exactly 4 options per question with 1 correct answer (correct_index 0-3).
+      - Tagged with topic for weak-area tracking.
+      - Malformed questions with != 4 options or out-of-range correct_index are dropped.
+    """
     try:
         doc_id = request.target_document_id
     except ValueError as val_err:
@@ -137,12 +150,19 @@ def generate_mcqs(
     llm_service = LLMClientService()
 
     try:
-        mcqs = llm_service.generate_mcqs(text_content=content, count=request.count)
-        return GenerateMCQResponse(document_id=db_doc.id, mcqs=mcqs)
+        mcqs = llm_service.generate_mcqs(text_content=content)
+        return GenerateMCQResponse(document_id=db_doc.id, questions=mcqs)
+    except RuntimeError as llm_err:
+        logger.error(f"LLM MCQ generation error for document {db_doc.id}: {llm_err}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI service error during MCQ generation: {str(llm_err)}",
+        )
     except Exception as e:
+        logger.error(f"Unexpected MCQ generation error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate MCQs: {str(e)}",
+            detail="Failed to generate MCQs.",
         )
 
 

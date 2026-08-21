@@ -34,18 +34,15 @@ class GenerateFlashcardsResponse(BaseModel):
 
 # ── MCQs (Phase 2 Step 2) ─────────────────────────────────────────
 class MCQItem(BaseModel):
-    id: int
-    question: str
-    options: List[str] = Field(..., min_length=4, max_length=4, description="Exactly 4 multiple choice options")
-    correct_answer: str = Field(..., description="Must match one of the options exactly")
-    explanation: str = Field(..., description="Explanation of why this option is correct")
-    topic: Optional[str] = Field(default="General", description="Topic category for analytics")
+    question: str = Field(..., description="The multiple choice question prompt")
+    options: List[str] = Field(..., min_length=4, max_length=4, description="Exactly 4 options")
+    correct_index: int = Field(..., ge=0, le=3, description="0-indexed position (0-3) of the correct answer")
+    topic: str = Field(default="General", description="Topic label representing the tested concept")
 
 
 class GenerateMCQRequest(BaseModel):
     document_id: Optional[str] = None
     file_id: Optional[str] = None
-    count: int = Field(default=5, ge=1, le=20)
 
     @property
     def target_document_id(self) -> str:
@@ -57,12 +54,16 @@ class GenerateMCQRequest(BaseModel):
 
 class GenerateMCQResponse(BaseModel):
     document_id: str
-    mcqs: List[MCQItem]
+    questions: List[MCQItem]
+
+    # Alias for backwards compatibility
+    @property
+    def mcqs(self) -> List[MCQItem]:
+        return self.questions
 
 
 # ── Short-Answer Questions (Phase 2 Step 3) ───────────────────────
 class ShortQuestionItem(BaseModel):
-    id: int
     question: str
     sample_answer: str
     key_points: List[str]
@@ -72,7 +73,6 @@ class ShortQuestionItem(BaseModel):
 class GenerateShortQRequest(BaseModel):
     document_id: Optional[str] = None
     file_id: Optional[str] = None
-    count: int = Field(default=5, ge=1, le=15)
 
     @property
     def target_document_id(self) -> str:

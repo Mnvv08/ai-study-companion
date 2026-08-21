@@ -130,20 +130,24 @@ class LLMClientService:
             logger.error(f"Flashcard generation failed: {e}")
             raise RuntimeError(f"LLM flashcard generation failed: {str(e)}")
 
-    def generate_mcqs(self, text_content: str, count: int = 5) -> List[Dict[str, Any]]:
-        """Generates multiple choice questions with 4 options and explanations."""
+    def generate_mcqs(self, text_content: str) -> List[Dict[str, Any]]:
+        """Generates Multiple Choice Questions with 4 options, correct_index, and topic tags."""
         system_prompt = (
-            "You are a professor creating exam-grade Multiple Choice Questions (MCQs).\n"
+            "You are a study assistant that creates multiple-choice questions from study material.\n"
             "Rules:\n"
-            "- Questions must be derived strictly from the text.\n"
-            "- Provide exactly 4 options per question.\n"
-            "- 'correct_answer' MUST be identical to one of the strings in 'options'.\n"
-            "- 'explanation' should explain why that answer is correct based on the text.\n"
-            "- Return JSON in this exact structure:\n"
-            '{"mcqs": [{"id": 1, "question": "string", "options": ["A", "B", "C", "D"], "correct_answer": "string", "explanation": "string"}]}'
+            "- Use ONLY the provided content. Do not add outside facts.\n"
+            "- Each question must have exactly 4 options, with exactly ONE correct answer.\n"
+            "- Incorrect options (distractors) should be plausible, not obviously wrong — they\n"
+            "  should reflect common misconceptions or closely related but incorrect facts.\n"
+            "- Decide the number of questions based on how much distinct, testable content exists\n"
+            "  in the material — do not pad or skip content to hit an arbitrary count.\n"
+            "- Tag each question with a short topic label representing the concept it tests.\n"
+            "- Return the output in the following JSON structure exactly:\n"
+            '{ "questions": [{"question": "string", "options": ["string","string","string","string"],\n'
+            '  "correct_index": 0, "topic": "string"}] }'
         )
 
-        user_prompt = f"Generate exactly {count} MCQs from this text:\n\n{text_content[:15000]}"
+        user_prompt = f'Study Material:\n"""\n{text_content[:20000]}\n"""'
 
         try:
             response = self.client.chat.completions.create(
@@ -155,9 +159,52 @@ class LLMClientService:
                 response_format={"type": "json_object"},
                 temperature=0.3,
             )
-            result = json.loads(response.choices[0].message.content)
-            return result.get("mcqs", [])
+            raw_text = response.choices[0].message.content or "{}"
+            data = extract_and_parse_json(raw_text)
+
+            if not isinstance(data, dict):
+                raise ValueError("Parsed JSON root is not an object.")
+
+            raw_questions = data.get("questions", data.get("mcqs", []))
+            valid_questions = []
+
+            for item in raw_questions:
+                if not isinstance(item, dict):
+                    continue
+
+                question_text = str(item.get("question", "")).strip()
+                options = item.get("options", [])
+                correct_idx = item.get("correct_index")
+                topic = str(item.get("topic", "General")).strip() or "General"
+
+                # Validation Rules:
+                # 1. Non-empty question text
+                # 2. Options must be a list of exactly 4 strings
+                # 3. correct_index must be an integer between 0 and 3
+                if (
+                    question_text
+                    and isinstance(options, list)
+                    and len(options) == 4
+                    and all(isinstance(opt, str) and opt.strip() for opt in options)
+                    and isinstance(correct_idx, int)
+                    and 0 <= correct_idx <= 3
+                ):
+                    valid_questions.append({
+                        "question": question_text,
+                        "options": [str(opt).strip() for opt in options],
+                        "correct_index": correct_idx,
+                        "topic": topic,
+                    })
+                else:
+                    logger.warning(
+                        f"Dropping malformed MCQ: question='{question_text[:30]}...', "
+                        f"options_len={len(options) if isinstance(options, list) else 'non-list'}, "
+                        f"correct_index={correct_idx}"
+                    )
+
+            return valid_questions
         except Exception as e:
+            logger.error(f"MCQ generation failed: {e}")
             raise RuntimeError(f"LLM MCQ generation failed: {str(e)}")
 
     def generate_short_questions(self, text_content: str, count: int = 5) -> List[Dict[str, Any]]:
