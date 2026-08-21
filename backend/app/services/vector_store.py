@@ -3,6 +3,9 @@ app/services/vector_store.py
 ──────────────────────────────
 ChromaDB client wrapper for storing and querying document embeddings.
 
+Embeddings are generated via Groq's API (OpenAI-compatible endpoint) using
+the nomic-embed-text-v1_5 model (768-dimensional vectors by default).
+
 Security & Multi-Tenancy:
   Every chunk is tagged with `user_id` and `document_id` in its metadata.
   All similarity queries strictly enforce filtering by BOTH `user_id` and `document_id`
@@ -21,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class VectorStoreService:
     def __init__(self):
-        """Initializes ChromaDB client and OpenAI embeddings client."""
+        """Initializes ChromaDB client and Groq embeddings client."""
         try:
             # Connect to ChromaDB HTTP container
             self.client = chromadb.HttpClient(
@@ -34,7 +37,11 @@ class VectorStoreService:
             logger.warning(f"ChromaDB HttpClient unavailable ({e}), falling back to PersistentClient")
             self.client = chromadb.PersistentClient(path="./chroma_db_data")
 
-        self.openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        # Groq embeddings client — same openai SDK, different base_url
+        self.embeddings_client = OpenAI(
+            api_key=settings.GROQ_API_KEY,
+            base_url=settings.GROQ_BASE_URL,
+        )
         self.collection_name = "study_documents"
 
     def _get_or_create_collection(self):
@@ -45,15 +52,15 @@ class VectorStoreService:
         )
 
     def _get_embedding(self, text: str) -> List[float]:
-        """Generates embedding vector using OpenAI Embeddings API."""
+        """Generates embedding vector using Groq's embeddings API."""
         try:
-            response = self.openai_client.embeddings.create(
+            response = self.embeddings_client.embeddings.create(
                 input=text,
-                model=settings.EMBEDDING_MODEL,
+                model=settings.GROQ_EMBEDDING_MODEL,
             )
             return response.data[0].embedding
         except Exception as err:
-            logger.error(f"OpenAI embedding generation failed: {err}")
+            logger.error(f"Groq embedding generation failed: {err}")
             raise RuntimeError(f"Embedding generation failed: {str(err)}")
 
     def add_document_chunks(

@@ -29,7 +29,7 @@ pymupdf==1.24.10                    # PyMuPDF fast C-backed PDF engine
 langchain-text-splitters==0.3.0     # Chunking utility only (lightweight, no full LangChain)
 
 # ── AI, Embeddings & Vector DB ────────────────────────────────────
-openai==1.47.0                      # OpenAI API for LLM and Embeddings
+openai==1.47.0                      # OpenAI-compatible SDK (used to call Groq API)
 chromadb==0.5.5                     # ChromaDB vector store client
 
 # ── Dev/Testing ───────────────────────────────────────────────────

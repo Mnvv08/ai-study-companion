@@ -10,7 +10,7 @@ An AI-powered study platform where students can upload PDF study materials and g
 |---|---|---|
 | **Frontend** | React 18 + Vite + Tailwind CSS | Fast dev server, responsive dark UI, toast alerts |
 | **Backend** | Python 3.11 + FastAPI + Pydantic v2 | High-performance asynchronous REST API |
-| **AI / LLM** | OpenAI API (`gpt-4o-mini`, `text-embedding-3-small`) | Fast, cost-effective inference & vector embeddings |
+| **AI / LLM** | Groq API (`llama-3.3-70b-versatile`, `nomic-embed-text-v1_5`) | Ultra-fast inference & vector embeddings via Groq Cloud |
 | **Vector DB** | ChromaDB | Open-source embedding storage with cosine distance search |
 | **Relational DB** | PostgreSQL 15 | Users, document metadata, and future quiz performance tracking |
 | **Auth & Security** | JWT (JSON Web Tokens) + Passlib / Bcrypt | Stateless Bearer authentication & secure salted hashing |
@@ -28,7 +28,7 @@ An AI-powered study platform where students can upload PDF study materials and g
   - User registration & login with password hashing and JWT access tokens.
   - Edge validation on upload (`.pdf` only, size limits, corruption detection).
   - Layout-aware PDF text extraction with `pdfplumber`.
-  - Recursive text chunking, OpenAI embeddings, and multi-tenant ChromaDB storage.
+  - Recursive text chunking, Groq embeddings, and multi-tenant ChromaDB storage.
   - Grounded RAG Question Answering (`POST /qa/ask`) refusing hallucinations.
   - Structured exam-ready notes generation (`POST /notes/generate`).
 - [x] **Phase 2 — AI Study Artifacts Generation**
@@ -52,9 +52,9 @@ Copy `.env.example` to `.env` and `backend/.env`:
 cp .env.example .env
 cp .env.example backend/.env
 ```
-Open `backend/.env` and insert your real OpenAI API Key:
+Open `backend/.env` and insert your real Groq API Key:
 ```ini
-OPENAI_API_KEY=sk-your-openai-key-here
+GROQ_API_KEY=gsk_your-groq-api-key-here
 ```
 
 ### 2. Start Services with Docker Compose

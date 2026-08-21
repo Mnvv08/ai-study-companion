@@ -34,29 +34,29 @@ def extract_and_parse_json(content: str) -> Dict[str, Any]:
 
 def _handle_provider_error(e: Exception, operation: str) -> RuntimeError:
     """
-    Translate provider-specific errors into clear RuntimeError messages.
+    Translate Groq API errors into clear RuntimeError messages.
 
-    The OpenAI Python SDK raises the same exception types regardless of
-    which provider base_url points to (OpenAI, xAI, Azure, etc.), so
-    these catches work for xAI/Grok out of the box.
+    We use the openai Python SDK pointed at Groq's endpoint, so the SDK
+    raises the same exception hierarchy (AuthenticationError, RateLimitError,
+    etc.) regardless of the backend provider.
     """
     if isinstance(e, AuthenticationError):
-        logger.error(f"xAI/Grok auth failure during {operation}: {e}")
+        logger.error(f"Groq auth failure during {operation}: {e}")
         return RuntimeError(
-            f"LLM authentication failed — check XAI_API_KEY in .env. ({operation})"
+            f"LLM authentication failed — check GROQ_API_KEY in .env. ({operation})"
         )
     elif isinstance(e, RateLimitError):
-        logger.warning(f"xAI/Grok rate limit hit during {operation}: {e}")
+        logger.warning(f"Groq rate limit hit during {operation}: {e}")
         return RuntimeError(
             f"LLM rate limit exceeded — please retry in a moment. ({operation})"
         )
     elif isinstance(e, APIConnectionError):
-        logger.error(f"xAI/Grok connection failure during {operation}: {e}")
+        logger.error(f"Groq connection failure during {operation}: {e}")
         return RuntimeError(
-            f"Cannot reach xAI API — check network/XAI_BASE_URL. ({operation})"
+            f"Cannot reach Groq API — check network/GROQ_BASE_URL. ({operation})"
         )
     elif isinstance(e, APIStatusError):
-        logger.error(f"xAI/Grok API error {e.status_code} during {operation}: {e}")
+        logger.error(f"Groq API error {e.status_code} during {operation}: {e}")
         return RuntimeError(
             f"LLM returned HTTP {e.status_code} during {operation}: {e.message}"
         )
@@ -67,21 +67,19 @@ def _handle_provider_error(e: Exception, operation: str) -> RuntimeError:
 
 class LLMClientService:
     """
-    Text generation service powered by xAI's Grok models.
+    Text generation service powered by Groq-hosted models.
 
-    Uses the OpenAI Python SDK pointed at xAI's base URL (https://api.x.ai/v1).
-    This works because xAI exposes an OpenAI-compatible chat completions API.
-
-    NOTE: This client is for TEXT GENERATION only. Embeddings are handled
-    separately by VectorStoreService using the OpenAI embeddings API.
+    Uses the openai Python SDK pointed at Groq's base URL
+    (https://api.groq.com/openai/v1). This works because Groq exposes
+    an OpenAI-compatible chat completions API.
     """
 
     def __init__(self):
         self.client = OpenAI(
-            api_key=settings.XAI_API_KEY,
-            base_url=settings.XAI_BASE_URL,
+            api_key=settings.GROQ_API_KEY,
+            base_url=settings.GROQ_BASE_URL,
         )
-        self.model = settings.GROK_MODEL
+        self.model = settings.GROQ_CHAT_MODEL
 
     def generate_study_notes(self, text_content: str) -> Dict[str, Any]:
         """Generates structured, exam-ready study notes in JSON format."""

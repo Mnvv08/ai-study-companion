@@ -41,30 +41,25 @@ class Settings(BaseSettings):
     ALGORITHM: str = Field(default="HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=60)
 
-    # ── xAI / Grok (Text Generation) ───────────────────────────────
-    # xAI's API is OpenAI-compatible for chat completions, so we reuse
-    # the openai Python SDK but point it at xAI's base URL.
-    XAI_API_KEY: str = Field(
-        default="xai-placeholder",
-        description="xAI API key for Grok chat completions (text generation only)."
+    # ── Groq (Text Generation + Embeddings) ────────────────────────
+    # Groq's API is OpenAI-compatible, so we reuse the openai Python
+    # SDK but point it at Groq's base URL for both chat and embeddings.
+    GROQ_API_KEY: str = Field(
+        default="gsk_placeholder",
+        description="Groq API key for chat completions and embeddings."
     )
-    XAI_BASE_URL: str = Field(
-        default="https://api.x.ai/v1",
-        description="xAI API base URL. Default is the production endpoint."
+    GROQ_BASE_URL: str = Field(
+        default="https://api.groq.com/openai/v1",
+        description="Groq API base URL (OpenAI-compatible endpoint)."
     )
-    GROK_MODEL: str = Field(
-        default="grok-3-mini",
-        description="Grok model name for text generation. Configurable to swap models without code changes."
+    GROQ_CHAT_MODEL: str = Field(
+        default="llama-3.3-70b-versatile",
+        description="Groq-hosted model for text generation (notes, flashcards, MCQs, Q&A)."
     )
-
-    # ── OpenAI (Embeddings Only) ─────────────────────────────────
-    # OpenAI is still used for embeddings since xAI does not offer
-    # an embeddings endpoint. Text generation no longer uses this key.
-    OPENAI_API_KEY: str = Field(
-        default="sk-placeholder",
-        description="OpenAI API key used ONLY for embeddings (not text generation)."
+    GROQ_EMBEDDING_MODEL: str = Field(
+        default="nomic-embed-text-v1_5",
+        description="Groq-hosted model for vector embeddings."
     )
-    EMBEDDING_MODEL: str = Field(default="text-embedding-3-small")
 
     # ── ChromaDB ─────────────────────────────────────────────────
     CHROMA_HOST: str = Field(default="chromadb")
