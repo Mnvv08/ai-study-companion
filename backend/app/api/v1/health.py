@@ -13,12 +13,15 @@ WHY have a health check?
 ENDPOINT: GET /api/v1/health
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+import logging
 
 from app.db.session import get_db
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -29,23 +32,26 @@ def health_check(db: Session = Depends(get_db)):
     Returns service status and verifies database connectivity.
 
     Checks:
-      1. The FastAPI app is running (implicit — if this responds, it is).
-      2. The database is reachable and responding to queries.
+      1. The FastAPI app is running.
+      2. The database is reachable and responding.
 
     Returns:
       200 OK  → Everything healthy.
-      500     → DB unreachable (FastAPI will raise automatically if exception propagates).
+      500     → DB unreachable.
     """
-    # Try a trivial DB query — if it fails, something is wrong with Postgres
     try:
         db.execute(text("SELECT 1"))
-        db_status = "connected"
     except Exception as e:
-        db_status = f"error: {str(e)}"
+        logger.error(f"Health check failed - Database connectivity error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database connection error: {str(e)}"
+        )
 
     return {
-        "status": "ok",
+        "status": "healthy",
         "app": settings.APP_NAME,
         "environment": settings.APP_ENV,
-        "database": db_status,
+        "database": "connected",
     }
+

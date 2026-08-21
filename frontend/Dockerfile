@@ -8,8 +8,10 @@ FROM node:20-slim
 
 WORKDIR /app
 
+# Set ownership of /app to node user
+RUN chown -R node:node /app
+
 # Copy package files first for Docker layer caching
-# (Same reasoning as backend: don't re-install if packages haven't changed)
 COPY package.json package-lock.json* ./
 
 RUN npm install
@@ -17,7 +19,11 @@ RUN npm install
 # Copy the rest of source code
 COPY . .
 
+# Use the preconfigured non-root node user
+USER node
+
 EXPOSE 5173
 
 # Vite dev server
 CMD ["npm", "run", "dev"]
+

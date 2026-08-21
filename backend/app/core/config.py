@@ -29,13 +29,13 @@ class Settings(BaseSettings):
 
     # ── Database ─────────────────────────────────────────────────
     DATABASE_URL: str = Field(
-        default="postgresql://studyuser:changeme@postgres:5432/study_companion",
+        ...,
         description="Full PostgreSQL connection URL (e.g., postgresql://user:pass@host:5432/dbname)"
     )
 
     # ── JWT ──────────────────────────────────────────────────────
     SECRET_KEY: str = Field(
-        default="dev-insecure-secret-key-replace-in-env-32bytes",
+        ...,
         description="Secret key used to sign JWT tokens. Must be kept private in production."
     )
     ALGORITHM: str = Field(default="HS256")
@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # Groq's API is OpenAI-compatible, so we reuse the openai Python
     # SDK but point it at Groq's base URL for both chat and embeddings.
     GROQ_API_KEY: str = Field(
-        default="gsk_placeholder",
+        ...,
         description="Groq API key for chat completions and embeddings."
     )
     GROQ_BASE_URL: str = Field(

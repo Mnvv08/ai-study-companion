@@ -5,16 +5,17 @@
 # the final image size significantly.
 # ─────────────────────────────────────────────────────────────────
 
-# Use slim Python image — much smaller than 'python:3.11' (~130MB vs ~900MB)
+# Use slim Python image
 FROM python:3.11-slim
 
 # Set working directory inside the container
 WORKDIR /app
 
-# WHY copy requirements.txt first?
-# Docker builds in layers. If requirements.txt hasn't changed,
-# Docker uses cached layer — no reinstalling all packages on every rebuild.
-# Only invalidated when requirements.txt actually changes.
+# Create a non-root user and group
+RUN groupadd -g 999 appuser && \
+    useradd -r -u 999 -g appuser appuser
+
+# Copy requirements.txt first
 COPY requirements.txt .
 
 # Install dependencies
@@ -24,12 +25,16 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copy the rest of the application code
 COPY . .
 
-# Create uploads directory in the container
-RUN mkdir -p /app/uploads
+# Create uploads directory and set ownership to appuser
+RUN mkdir -p /app/uploads && \
+    chown -R appuser:appuser /app
+
+# Use the non-root user
+USER appuser
 
 # Expose the port FastAPI will listen on
 EXPOSE 8000
 
-# Default command — overridden by docker-compose command:
-# uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# Default command
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+

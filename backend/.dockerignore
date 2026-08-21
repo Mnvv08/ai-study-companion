@@ -1,0 +1,12 @@
+# backend/.dockerignore
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.git/
+.env
+uploads/
+chroma_db_data/
