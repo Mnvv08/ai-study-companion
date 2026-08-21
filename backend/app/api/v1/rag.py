@@ -19,7 +19,7 @@ from app.db.session import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.file import Document
-from app.schemas.rag import AskQuestionRequest, AskQuestionResponse
+from app.schemas.rag import AskQuestionRequest, AskQuestionResponse, AskMultiQuestionRequest, AskMultiQuestionResponse
 from app.services.chunker import TextChunkerService
 from app.services.vector_store import VectorStoreService
 from app.services.llm_client import LLMClientService
@@ -52,7 +52,7 @@ def ask_question(
       2. Retrieves top 3-5 relevant chunks from ChromaDB filtered by user_id and document_id.
       3. Calls LLM with strict grounding prompt.
       4. Returns clear, exam-relevant answer.
-    """
+     """
     # ── 1. Resolve Document ID & Verify Ownership ─────────────────
     try:
         doc_id = request.target_document_id
@@ -139,3 +139,103 @@ def ask_question(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while generating the answer. Please try again.",
         )
+
+
+@router.post(
+    "/qa/ask-multi",
+    response_model=AskMultiQuestionResponse,
+    summary="Ask a question across multiple uploaded study documents (RAG Q&A)",
+)
+def ask_question_multi(
+    request: AskMultiQuestionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Multi-document RAG Q&A endpoint.
+    Retrieves up to 2 top chunks per document to maintain a balanced context.
+    """
+    # 1. Verify that all document IDs belong to the current user (404/403 if any don't)
+    docs = (
+        db.query(Document)
+        .filter(Document.id.in_(request.document_ids), Document.user_id == current_user.id)
+        .all()
+    )
+
+    if len(docs) != len(set(request.document_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="One or more documents not found or unauthorized.",
+        )
+
+    # 2. Retrieve top 2 relevant chunks per document to avoid context overflow and maintain balance
+    vector_service = VectorStoreService()
+    combined_chunks = []
+
+    for doc in docs:
+        chunks = []
+        try:
+            chunks = vector_service.search_similar_chunks(
+                user_id=current_user.id,
+                document_id=doc.id,
+                query=request.question,
+                top_k=2,
+            )
+        except Exception as search_err:
+            logger.warning(f"ChromaDB search encountered an issue for document {doc.id}: {search_err}")
+
+        # On-the-fly indexing fallback
+        if not chunks and doc.extracted_text:
+            try:
+                doc_chunks = TextChunkerService.chunk_text(
+                    doc.extracted_text, chunk_size=500, chunk_overlap=50
+                )
+                vector_service.add_document_chunks(
+                    user_id=current_user.id, document_id=doc.id, chunks=doc_chunks
+                )
+                chunks = vector_service.search_similar_chunks(
+                    user_id=current_user.id,
+                    document_id=doc.id,
+                    query=request.question,
+                    top_k=2,
+                )
+            except Exception as idx_err:
+                logger.error(f"On-the-fly indexing failed for document {doc.id}: {idx_err}")
+
+        combined_chunks.extend(chunks)
+
+    # Handle case where no context chunks are found across all documents
+    if not combined_chunks:
+        return AskMultiQuestionResponse(
+            document_ids=[doc.id for doc in docs],
+            question=request.question,
+            answer="I couldn't find this in your uploaded material.",
+            sources_used=[],
+        )
+
+    # 3. Call LLM for Grounded Answer
+    llm_service = LLMClientService()
+    try:
+        answer = llm_service.answer_question_with_context(
+            question=request.question,
+            context_chunks=combined_chunks,
+        )
+        return AskMultiQuestionResponse(
+            document_ids=[doc.id for doc in docs],
+            question=request.question,
+            answer=answer,
+            sources_used=combined_chunks,
+        )
+    except RuntimeError as llm_err:
+        logger.error(f"LLM API error during Q&A: {llm_err}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI service temporarily unavailable: {str(llm_err)}",
+        )
+    except Exception as general_err:
+        logger.error(f"Unexpected error in multi Q&A endpoint: {general_err}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while generating the answer. Please try again.",
+        )
+

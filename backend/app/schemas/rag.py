@@ -55,3 +55,16 @@ class GenerateNotesResponse(BaseModel):
     title: str
     sections: List[NoteSection]
     key_terms: List[KeyTerm]
+
+
+class AskMultiQuestionRequest(BaseModel):
+    document_ids: List[str] = Field(..., description="List of document IDs to query across")
+    question: str = Field(..., min_length=2, max_length=1000, description="The student's question")
+
+
+class AskMultiQuestionResponse(BaseModel):
+    document_ids: List[str] = Field(..., description="The document IDs queried")
+    question: str = Field(..., description="The original question")
+    answer: str = Field(..., description="The generated answer from context")
+    sources_used: List[str] = Field(default_factory=list, description="Text chunks used as source context")
+

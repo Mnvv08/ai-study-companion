@@ -183,3 +183,84 @@ def test_ask_question_no_context_returns_clean_fallback(auth_headers, sample_doc
     assert response.status_code == 200
     data = response.json()
     assert "I couldn't find this in your uploaded material" in data["answer"]
+
+
+def test_ask_question_multi_unauthorized():
+    """Verify that /qa/ask-multi requires valid JWT authorization."""
+    response = client.post("/qa/ask-multi", json={"document_ids": ["doc-1"], "question": "What is Dijkstra?"})
+    assert response.status_code == 401
+
+
+def test_ask_question_multi_not_found(auth_headers, sample_document):
+    """Verify that /qa/ask-multi returns 404 if any document ID is invalid or belongs to another user."""
+    # Try querying sample_document and another fake one
+    response = client.post(
+        "/qa/ask-multi",
+        headers=auth_headers,
+        json={"document_ids": [sample_document.id, "fake-doc-999"], "question": "What is Dijkstra?"}
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "One or more documents not found or unauthorized."
+
+
+def test_ask_question_multi_success(auth_headers, student_user, sample_document, monkeypatch):
+    """Verify that /qa/ask-multi retrieves chunks from all documents and returns the answer."""
+    db = TestingSessionLocal()
+    # Create a second document for the student
+    doc2 = Document(
+        id="doc-bellman-202",
+        user_id=student_user.id,
+        filename="bellman_ford.pdf",
+        file_path="/tmp/bellman.pdf",
+        file_size_bytes=2048,
+        file_type="pdf",
+        status="processed",
+        extracted_text="Bellman-Ford algorithm finds shortest paths in a graph and supports negative edge weights.",
+    )
+    db.add(doc2)
+    db.commit()
+    db.refresh(doc2)
+    db.close()
+
+    # Mock vector store query to return different context chunks for each document
+    def mock_search_similar_chunks(self, user_id, document_id, query, top_k=2):
+        if document_id == "doc-algo-101":
+            return ["Dijkstra matches non-negative edge weights."]
+        elif document_id == "doc-bellman-202":
+            return ["Bellman-Ford matches negative edge weights."]
+        return []
+
+    monkeypatch.setattr(
+        VectorStoreService,
+        "search_similar_chunks",
+        mock_search_similar_chunks
+    )
+
+    # Mock LLM response
+    monkeypatch.setattr(
+        LLMClientService,
+        "answer_question_with_context",
+        lambda self, question, context_chunks: "Dijkstra handles non-negative edge weights, while Bellman-Ford supports negative weights."
+    )
+
+    payload = {
+        "document_ids": [sample_document.id, "doc-bellman-202"],
+        "question": "Compare Dijkstra and Bellman-Ford algorithms."
+    }
+
+    response = client.post(
+        "/qa/ask-multi",
+        headers=auth_headers,
+        json=payload
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["document_ids"]) == 2
+    assert "doc-algo-101" in data["document_ids"]
+    assert "doc-bellman-202" in data["document_ids"]
+    assert "negative" in data["answer"]
+    assert len(data["sources_used"]) == 2
+    assert "Dijkstra matches non-negative edge weights." in data["sources_used"]
+    assert "Bellman-Ford matches negative edge weights." in data["sources_used"]
+
