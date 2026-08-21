@@ -80,3 +80,77 @@ def extract_text_from_pdf(file_path: str) -> str:
         )
 
     return full_text
+
+
+def extract_text_from_pptx(file_path: str) -> str:
+    """
+    Extracts plain text from a PPT/PPTX file located at `file_path`.
+    Pulls text from all shapes/slides (titles, body text) and speaker notes.
+
+    Args:
+        file_path: Absolute or relative path to the PPTX on disk.
+
+    Returns:
+        A string containing all extracted text with slide separators.
+
+    Raises:
+        ValueError: If file does not exist, is corrupt/unreadable,
+                    or contains no extractable text.
+    """
+    if not os.path.exists(file_path):
+        raise ValueError(f"File not found on disk: {file_path}")
+
+    try:
+        from pptx import Presentation
+        prs = Presentation(file_path)
+    except Exception as e:
+        raise ValueError(f"Corrupt or unreadable PPT/PPTX file: {str(e)}")
+
+    extracted_slides = []
+
+    for slide_idx, slide in enumerate(prs.slides, start=1):
+        slide_text_elements = []
+
+        # Extract text from shapes
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                text_frame_content = []
+                for paragraph in shape.text_frame.paragraphs:
+                    para_text = paragraph.text.strip()
+                    if para_text:
+                        text_frame_content.append(para_text)
+                if text_frame_content:
+                    slide_text_elements.append("\n".join(text_frame_content))
+
+        # Extract speaker notes if present
+        if slide.has_notes_slide and slide.notes_slide.notes_text_frame:
+            notes_text = slide.notes_slide.notes_text_frame.text.strip()
+            if notes_text:
+                slide_text_elements.append(f"[Speaker Notes]\n{notes_text}")
+
+        slide_body = "\n".join(slide_text_elements).strip()
+        if slide_body:
+            extracted_slides.append(f"--- Slide {slide_idx} ---\n{slide_body}")
+
+    full_text = "\n\n".join(extracted_slides).strip()
+
+    if not full_text:
+        raise ValueError(
+            "Presentation contains no extractable text (e.g. it may consist entirely of image-only slides)."
+        )
+
+    return full_text
+
+
+def extract_text(file_path: str, file_type: str) -> str:
+    """
+    Extracts text from the document at `file_path` based on its `file_type`.
+    """
+    ext = file_type.lower().strip().replace(".", "")
+    if ext == "pdf":
+        return extract_text_from_pdf(file_path)
+    elif ext in ("pptx", "ppt"):
+        return extract_text_from_pptx(file_path)
+    else:
+        raise ValueError(f"Unsupported file type: {file_type}")
+

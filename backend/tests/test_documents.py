@@ -102,12 +102,12 @@ def test_upload_without_auth_fails():
 
 
 def test_upload_non_pdf_rejected(auth_headers):
-    """Verify that non-PDF files (e.g. .txt, .exe, .png) are rejected at the edge with 400."""
+    """Verify that non-PDF/non-PPTX files (e.g. .txt, .exe, .png) are rejected at the edge with 400."""
     txt_content = b"This is plain text, not a PDF."
     files = {"file": ("notes.txt", io.BytesIO(txt_content), "text/plain")}
     response = client.post("/documents/upload", headers=auth_headers, files=files)
     assert response.status_code == 400
-    assert "Only PDF files are supported" in response.json()["detail"]
+    assert "Only PDF and PPTX/PPT files are supported" in response.json()["detail"]
 
 
 def test_upload_oversized_file_rejected(auth_headers, monkeypatch):
@@ -125,10 +125,10 @@ def test_upload_oversized_file_rejected(auth_headers, monkeypatch):
 
 def test_upload_valid_pdf_success(auth_headers, test_user, monkeypatch):
     """Verify valid PDF upload returns 201 with document ID and status='processed' upon extraction."""
-    # Mock extract_text_from_pdf to simulate successful extraction without needing real binary PDF stream
+    # Mock extract_text to simulate successful extraction
     monkeypatch.setattr(
-        "app.api.v1.documents.extract_text_from_pdf",
-        lambda path: "Extracted lecture content for Algorithms and Data Structures."
+        "app.api.v1.documents.extract_text",
+        lambda path, ext: "Extracted lecture content for Algorithms and Data Structures."
     )
     pdf_content = b"%PDF-1.4 valid stream mock"
     files = {"file": ("algorithms_lecture1.pdf", io.BytesIO(pdf_content), "application/pdf")}
@@ -140,6 +140,30 @@ def test_upload_valid_pdf_success(auth_headers, test_user, monkeypatch):
     assert data["status"] == "processed"
     assert data["filename"] == "algorithms_lecture1.pdf"
     assert data["file_size_bytes"] == len(pdf_content)
+
+
+def test_upload_valid_pptx_success(auth_headers, test_user, monkeypatch):
+    """Verify valid PPTX upload returns 201 with document ID and status='processed'."""
+    monkeypatch.setattr(
+        "app.api.v1.documents.extract_text",
+        lambda path, ext: "Extracted PPTX slides text on operating systems."
+    )
+    pptx_content = b"Fake PPTX binary content"
+    files = {
+        "file": (
+            "os_slides.pptx",
+            io.BytesIO(pptx_content),
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        )
+    }
+    
+    response = client.post("/documents/upload", headers=auth_headers, files=files)
+    assert response.status_code == 201
+    data = response.json()
+    assert "id" in data
+    assert data["status"] == "processed"
+    assert data["filename"] == "os_slides.pptx"
+    assert data["file_size_bytes"] == len(pptx_content)
 
 
 def test_upload_unreadable_pdf_marks_status_failed_without_crashing(auth_headers, test_user):

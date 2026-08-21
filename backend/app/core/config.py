@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     # ── File Uploads ─────────────────────────────────────────────
     UPLOAD_DIR: str = Field(default="./uploads")
     MAX_UPLOAD_SIZE_MB: int = Field(default=20)
-    ALLOWED_EXTENSIONS: str = Field(default="pdf,pptx")
+    ALLOWED_EXTENSIONS: str = Field(default="pdf,pptx,ppt")
 
     @property
     def allowed_extensions_list(self) -> list[str]:

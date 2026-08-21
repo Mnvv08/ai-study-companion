@@ -29,7 +29,7 @@ from app.schemas.file import (
     DocumentDetailResponse,
 )
 
-from app.services.extraction import extract_text_from_pdf
+from app.services.extraction import extract_text
 from app.services.chunker import TextChunkerService
 from app.services.vector_store import VectorStoreService
 
@@ -71,10 +71,17 @@ async def upload_document(
     clean_filename = sanitize_filename(raw_filename)
     
     # ── 1. Edge Validation: File Extension / Type ──────────────────
-    if not clean_filename.lower().endswith(".pdf"):
+    ext = clean_filename.split(".")[-1].lower() if "." in clean_filename else ""
+    valid_content_types = {
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "application/vnd.ms-powerpoint",
+    }
+    
+    if ext not in settings.allowed_extensions_list or file.content_type not in valid_content_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file type '{clean_filename}'. Only PDF files are supported in Phase 1.",
+            detail=f"Invalid file type '{clean_filename}'. Only PDF and PPTX/PPT files are supported.",
         )
 
     # ── 2. Edge Validation: File Content & Size ────────────────────
@@ -127,7 +134,7 @@ async def upload_document(
             filename=clean_filename,
             file_path=saved_file_path,
             file_size_bytes=file_size,
-            file_type="pdf",
+            file_type=ext,
             status="pending",
         )
         db.add(db_document)
@@ -148,7 +155,7 @@ async def upload_document(
 
     # ── 5. Synchronous Text Extraction & Vector Indexing ───────────
     try:
-        extracted_text = extract_text_from_pdf(saved_file_path)
+        extracted_text = extract_text(saved_file_path, ext)
         
         # Chunk text (500 tokens / characters with overlap)
         chunks = TextChunkerService.chunk_text(
