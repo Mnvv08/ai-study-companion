@@ -14,9 +14,9 @@ from app.db.session import get_db
 from app.core.config import settings
 from app.core.security import get_current_user
 from app.models.user import User
-from app.models.file import UploadedFile
+from app.models.file import Document, UploadedFile
 from app.schemas.file import FileResponse, FileDetailResponse
-from app.services.extractor import TextExtractorService
+from app.services.extraction import extract_text_from_pdf
 
 router = APIRouter(prefix="/files", tags=["Files"])
 
@@ -66,7 +66,7 @@ async def upload_file(
 
     # Extract text from saved file
     try:
-        extracted_text = TextExtractorService.extract_text_from_pdf(file_path)
+        extracted_text = extract_text_from_pdf(file_path)
         status_flag = "processed"
     except ValueError as err:
         # File is corrupt or unscannable plain text
