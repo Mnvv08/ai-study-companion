@@ -33,6 +33,7 @@ from app.schemas.generation import (
 )
 from app.services.vector_store import VectorStoreService
 from app.services.llm_client import LLMClientService
+from app.core.cache import study_cache
 
 logger = logging.getLogger(__name__)
 
@@ -102,8 +103,19 @@ def generate_flashcards(
     db_doc, content = _get_user_document_content(doc_id, current_user.id, db)
     llm_service = LLMClientService()
 
+    # ── Cache Lookup & Eviction ────────────────────────────────────
+    endpoint_key = "flashcards"
+    if payload.force_regenerate:
+        study_cache.invalidate(db_doc.id, endpoint_key)
+
+    cached_cards = study_cache.get(db_doc.id, endpoint_key)
+    if cached_cards is not None:
+        return GenerateFlashcardsResponse(document_id=db_doc.id, flashcards=cached_cards)
+
+    # ── Call LLM ───────────────────────────────────────────────────
     try:
         cards = llm_service.generate_flashcards(text_content=content, persona_mode=current_user.persona_mode)
+        study_cache.set(db_doc.id, endpoint_key, cards)
         return GenerateFlashcardsResponse(document_id=db_doc.id, flashcards=cards)
     except RuntimeError as llm_err:
         logger.error(f"LLM flashcard error for document {db_doc.id}: {llm_err}")
@@ -158,20 +170,29 @@ def generate_mcqs(
     db_doc, content = _get_user_document_content(doc_id, current_user.id, db)
     llm_service = LLMClientService()
 
-    try:
-        mcqs = llm_service.generate_mcqs(text_content=content, persona_mode=current_user.persona_mode)
-    except RuntimeError as llm_err:
-        logger.error(f"LLM MCQ generation error for document {db_doc.id}: {llm_err}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI service error during MCQ generation: {str(llm_err)}",
-        )
-    except Exception as e:
-        logger.error(f"Unexpected MCQ generation error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to generate MCQs.",
-        )
+    # ── Cache Lookup & Eviction ────────────────────────────────────
+    endpoint_key = "mcqs"
+    if payload.force_regenerate:
+        study_cache.invalidate(db_doc.id, endpoint_key)
+
+    mcqs = study_cache.get(db_doc.id, endpoint_key)
+
+    if mcqs is None:
+        try:
+            mcqs = llm_service.generate_mcqs(text_content=content, persona_mode=current_user.persona_mode)
+            study_cache.set(db_doc.id, endpoint_key, mcqs)
+        except RuntimeError as llm_err:
+            logger.error(f"LLM MCQ generation error for document {db_doc.id}: {llm_err}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"AI service error during MCQ generation: {str(llm_err)}",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected MCQ generation error: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to generate MCQs.",
+            )
 
     # Persist the generated MCQs to the database inside a single transaction
     quiz_id = str(uuid.uuid4())
@@ -263,20 +284,29 @@ def generate_short_questions(
     db_doc, content = _get_user_document_content(doc_id, current_user.id, db)
     llm_service = LLMClientService()
 
-    try:
-        questions = llm_service.generate_short_questions(text_content=content, persona_mode=current_user.persona_mode)
-    except RuntimeError as llm_err:
-        logger.error(f"LLM short-answer generation error for document {db_doc.id}: {llm_err}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI service error during short-answer generation: {str(llm_err)}",
-        )
-    except Exception as e:
-        logger.error(f"Unexpected short-answer generation error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to generate short-answer questions.",
-        )
+    # ── Cache Lookup & Eviction ────────────────────────────────────
+    endpoint_key = "short_answer"
+    if payload.force_regenerate:
+        study_cache.invalidate(db_doc.id, endpoint_key)
+
+    questions = study_cache.get(db_doc.id, endpoint_key)
+
+    if questions is None:
+        try:
+            questions = llm_service.generate_short_questions(text_content=content, persona_mode=current_user.persona_mode)
+            study_cache.set(db_doc.id, endpoint_key, questions)
+        except RuntimeError as llm_err:
+            logger.error(f"LLM short-answer generation error for document {db_doc.id}: {llm_err}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"AI service error during short-answer generation: {str(llm_err)}",
+            )
+        except Exception as e:
+            logger.error(f"Unexpected short-answer generation error: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to generate short-answer questions.",
+            )
 
     # Persist the generated short-answer questions to the database inside a single transaction
     quiz_id = str(uuid.uuid4())

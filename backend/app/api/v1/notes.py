@@ -22,6 +22,7 @@ from app.models.file import Document
 from app.schemas.rag import GenerateNotesRequest, GenerateNotesResponse
 from app.services.vector_store import VectorStoreService
 from app.services.llm_client import LLMClientService
+from app.core.cache import study_cache
 
 logger = logging.getLogger(__name__)
 
@@ -92,10 +93,25 @@ def generate_notes(
             detail="Document contains no readable text for note generation.",
         )
 
+    # ── Cache Lookup & Eviction ────────────────────────────────────
+    endpoint_key = "notes"
+    if payload.force_regenerate:
+        study_cache.invalidate(db_doc.id, endpoint_key)
+
+    cached_data = study_cache.get(db_doc.id, endpoint_key)
+    if cached_data is not None:
+        return GenerateNotesResponse(
+            document_id=db_doc.id,
+            title=cached_data.get("title", db_doc.filename),
+            sections=cached_data.get("sections", []),
+            key_terms=cached_data.get("key_terms", []),
+        )
+
     # ── Call LLM for Structured Notes ─────────────────────────────
     llm_service = LLMClientService()
     try:
         notes_data = llm_service.generate_study_notes(study_content, persona_mode=current_user.persona_mode)
+        study_cache.set(db_doc.id, endpoint_key, notes_data)
         return GenerateNotesResponse(
             document_id=db_doc.id,
             title=notes_data.get("title", db_doc.filename),

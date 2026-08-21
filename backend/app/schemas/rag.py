@@ -31,6 +31,7 @@ class AskQuestionResponse(BaseModel):
 class GenerateNotesRequest(BaseModel):
     document_id: Optional[str] = None
     file_id: Optional[str] = None
+    force_regenerate: bool = False
 
     @property
     def target_document_id(self) -> str:

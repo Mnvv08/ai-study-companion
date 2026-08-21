@@ -18,6 +18,7 @@ class FlashcardItem(BaseModel):
 class GenerateFlashcardsRequest(BaseModel):
     document_id: Optional[str] = None
     file_id: Optional[str] = None
+    force_regenerate: bool = False
 
     @property
     def target_document_id(self) -> str:
@@ -48,6 +49,7 @@ class MCQItemWithIds(MCQItem):
 class GenerateMCQRequest(BaseModel):
     document_id: Optional[str] = None
     file_id: Optional[str] = None
+    force_regenerate: bool = False
 
     @property
     def target_document_id(self) -> str:
@@ -85,6 +87,7 @@ class ShortAnswerItemWithIds(ShortAnswerItem):
 class GenerateShortAnswerRequest(BaseModel):
     document_id: Optional[str] = None
     file_id: Optional[str] = None
+    force_regenerate: bool = False
 
     @property
     def target_document_id(self) -> str:
