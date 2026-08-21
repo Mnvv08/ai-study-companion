@@ -16,11 +16,20 @@ const Dashboard = () => {
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
 
+  // Right Panel tab selection: 'chat' | 'notes'
+  const [activeTab, setActiveTab] = useState('chat');
+
   // Q&A Chat states
   const [chatHistory, setChatHistory] = useState([]);
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
   const chatEndRef = useRef(null);
+
+  // Study Notes states
+  const [sessionNotes, setSessionNotes] = useState({}); // docId -> notesData
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [notesError, setNotesError] = useState('');
+  const [expandedSections, setExpandedSections] = useState({}); // sectionIndex -> bool
 
   // 1. Fetch documents list on mount
   const fetchDocuments = async () => {
@@ -75,6 +84,8 @@ const Dashboard = () => {
   useEffect(() => {
     setChatHistory([]);
     setQuestion('');
+    setNotesError('');
+    setActiveTab('chat'); // default to chat on document change
   }, [selectedDocId]);
 
   // Scroll to bottom of chat history on updates
@@ -138,7 +149,6 @@ const Dashboard = () => {
     setAsking(true);
 
     const messageIndex = chatHistory.length;
-    // Optimistic update
     setChatHistory((prev) => [
       ...prev,
       { question: currentQuestion, answer: null, error: null, loading: true },
@@ -170,6 +180,54 @@ const Dashboard = () => {
     } finally {
       setAsking(false);
     }
+  };
+
+  // 6. Handle Notes Generation & Caching
+  const triggerNotesGeneration = async (force = false) => {
+    if (!selectedDocId) return;
+    setNotesLoading(true);
+    setNotesError('');
+
+    try {
+      const response = await apiClient.post('/notes/generate', {
+        document_id: selectedDocId,
+        force_regenerate: force,
+      });
+
+      const notesData = response.data;
+      
+      // Cache in session mapping
+      setSessionNotes((prev) => ({
+        ...prev,
+        [selectedDocId]: notesData,
+      }));
+
+      // Initialize sections expand states (First expanded, others collapsed)
+      const initialExpand = {};
+      if (notesData.sections) {
+        notesData.sections.forEach((_, idx) => {
+          initialExpand[idx] = idx === 0;
+        });
+      }
+      setExpandedSections(initialExpand);
+    } catch (err) {
+      console.error(err);
+      setNotesError(
+        err.response?.data?.detail || 'Failed to generate study notes. Please retry.'
+      );
+    } finally {
+      setNotesLoading(false);
+    }
+  };
+
+  // Check if notes already exist in session
+  const currentNotes = sessionNotes[selectedDocId];
+
+  const toggleSection = (index) => {
+    setExpandedSections((prev) => ({
+      ...prev,
+      [index]: !prev[index],
+    }));
   };
 
   const selectedDocName = documents.find((d) => d.id === selectedDocId)?.filename;
@@ -309,44 +367,64 @@ const Dashboard = () => {
           </section>
         </div>
 
-        {/* Right Column (Q&A Panel) - 7 Cols */}
+        {/* Right Column (Q&A / Notes Tabs Panel) - 7 Cols */}
         <div className="lg:col-span-7 bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden flex flex-col min-h-[450px]">
           
-          {/* Header */}
-          <div className="bg-gray-50 border-b border-gray-100 p-4 flex-shrink-0 flex justify-between items-center">
+          {/* Header & Tabs */}
+          <div className="bg-gray-50 border-b border-gray-100 p-4 flex-shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-base font-bold text-gray-900">Document Q&amp;A Chat</h2>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setActiveTab('chat')}
+                  className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
+                    activeTab === 'chat'
+                      ? 'border-indigo-600 text-indigo-700'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Q&amp;A Chat
+                </button>
+                <button
+                  onClick={() => setActiveTab('notes')}
+                  className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
+                    activeTab === 'notes'
+                      ? 'border-indigo-600 text-indigo-700'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Study Notes
+                </button>
+              </div>
               {selectedDocId && (
-                <p className="text-xs text-indigo-700 truncate max-w-sm font-semibold">
-                  Talking to: {selectedDocName}
+                <p className="text-2xs text-gray-500 mt-1 truncate max-w-sm">
+                  Active file: {selectedDocName}
                 </p>
               )}
             </div>
             {selectedDocId && (
               <button
                 onClick={() => setSelectedDocId(null)}
-                className="text-2xs font-bold text-red-600 hover:text-red-800"
+                className="text-2xs font-bold text-red-600 hover:text-red-800 self-start sm:self-auto"
               >
-                Reset
+                Clear Selection
               </button>
             )}
           </div>
 
-          {/* Chat area */}
+          {/* Panel Contents */}
           {!selectedDocId ? (
             <div className="flex-grow flex flex-col items-center justify-center p-8 text-center bg-gray-50/50">
               <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center text-3xl mb-4 shadow-inner">
-                💬
+                📚
               </div>
               <h3 className="text-base font-bold text-gray-900">No Document Selected</h3>
               <p className="text-sm text-gray-500 mt-2 max-w-sm leading-relaxed">
-                Choose a fully processed slides or note document from the list on the left to start asking questions.
+                Select a processed document on the left to start asking questions or generate structured study notes.
               </p>
             </div>
-          ) : (
+          ) : activeTab === 'chat' ? (
+            /* TAB 1: Chat interface */
             <div className="flex-grow flex flex-col justify-between overflow-hidden">
-              
-              {/* Message History */}
               <div className="flex-grow p-4 overflow-y-auto space-y-4">
                 {chatHistory.length === 0 && !asking && (
                   <div className="text-center py-12 text-slate-400 text-xs italic">
@@ -359,14 +437,12 @@ const Dashboard = () => {
                   
                   return (
                     <div key={idx} className="space-y-2">
-                      {/* Question (User) */}
                       <div className="flex justify-end">
                         <div className="bg-indigo-650 bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-md text-sm font-medium shadow-sm">
                           {chat.question}
                         </div>
                       </div>
 
-                      {/* Answer (AI) */}
                       <div className="flex justify-start">
                         {chat.loading ? (
                           <div className="bg-gray-100 text-gray-500 rounded-2xl rounded-tl-sm px-4 py-2.5 flex items-center space-x-2 text-sm shadow-sm">
@@ -401,7 +477,6 @@ const Dashboard = () => {
                 <div ref={chatEndRef} />
               </div>
 
-              {/* Chat Input form */}
               <form onSubmit={handleAskSubmit} className="p-4 bg-gray-50 border-t border-gray-100 flex-shrink-0 flex gap-2">
                 <input
                   type="text"
@@ -415,11 +490,127 @@ const Dashboard = () => {
                 <button
                   type="submit"
                   disabled={asking || !question.trim()}
-                  className="rounded-lg bg-indigo-650 bg-indigo-600 text-white px-5 py-2.5 text-sm font-semibold hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 transition shadow-sm"
+                  className="rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-sm font-semibold hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 transition shadow-sm"
                 >
                   Ask
                 </button>
               </form>
+            </div>
+          ) : (
+            /* TAB 2: Notes Interface */
+            <div className="flex-grow flex flex-col overflow-hidden bg-gray-50/30">
+              
+              {!currentNotes && !notesLoading && (
+                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
+                  <h3 className="text-base font-bold text-gray-900">Notes Not Generated</h3>
+                  <p className="text-xs text-gray-500 mt-2 max-w-xs leading-relaxed">
+                    Convert this document's text into structured study notes, key terms, and summary headings.
+                  </p>
+                  
+                  {notesError && (
+                    <div className="mt-4 max-w-sm rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
+                      {notesError}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => triggerNotesGeneration(false)}
+                    className="mt-5 rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md transition"
+                  >
+                    Generate Notes
+                  </button>
+                </div>
+              )}
+
+              {notesLoading && (
+                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
+                  <svg className="animate-spin h-10 w-10 text-indigo-600 mb-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  <h4 className="text-sm font-bold text-gray-900">Structuring Study Notes...</h4>
+                  <p className="text-2xs text-gray-500 mt-1">This takes 5-10 seconds to read and organize the source content.</p>
+                </div>
+              )}
+
+              {currentNotes && !notesLoading && (
+                <div className="flex-grow flex flex-col overflow-hidden">
+                  
+                  {/* Notes Control Subheader */}
+                  <div className="bg-white border-b border-gray-150 px-4 py-2 flex justify-between items-center flex-shrink-0 text-xs">
+                    <span className="font-semibold text-gray-800">
+                      Title: {currentNotes.title || 'Structured Study Notes'}
+                    </span>
+                    <button
+                      onClick={() => triggerNotesGeneration(true)}
+                      className="text-2xs text-indigo-600 hover:text-indigo-850 font-bold hover:underline"
+                    >
+                      Regenerate
+                    </button>
+                  </div>
+
+                  {notesError && (
+                    <div className="bg-red-50 text-red-700 text-2xs p-3 border-b border-red-200">
+                      ⚠️ {notesError} (Showing last cached notes)
+                    </div>
+                  )}
+
+                  {/* Dual Panel Notes view */}
+                  <div className="flex-grow flex flex-col md:flex-row overflow-hidden">
+                    
+                    {/* Left Panel: Sections List (Collapsible) */}
+                    <div className="flex-grow md:w-3/5 p-4 overflow-y-auto space-y-3">
+                      {currentNotes.sections?.map((section, idx) => {
+                        const isExpanded = !!expandedSections[idx];
+                        
+                        return (
+                          <div key={idx} className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-2xs">
+                            <button
+                              onClick={() => toggleSection(idx)}
+                              className="w-full text-left px-4 py-3 bg-gray-50 hover:bg-gray-100 flex justify-between items-center transition border-b border-gray-100"
+                            >
+                              <span className="font-bold text-sm text-gray-900">{section.heading}</span>
+                              <span className="text-xs text-gray-400 font-semibold">{isExpanded ? 'Collapse ▲' : 'Expand ▼'}</span>
+                            </button>
+
+                            {isExpanded && (
+                              <ul className="p-4 space-y-2 list-disc list-inside text-xs text-gray-700 leading-relaxed bg-white">
+                                {section.points?.map((pt, pIdx) => (
+                                  <li key={pIdx} className="pl-1">
+                                    {pt}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Right Panel: Key Terms Sidebar */}
+                    <div className="md:w-2/5 bg-gray-50 border-t md:border-t-0 md:border-l border-gray-200 p-4 overflow-y-auto flex flex-col">
+                      <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Key Terms</h3>
+                      
+                      {currentNotes.key_terms?.length === 0 ? (
+                        <div className="text-center py-6 text-2xs text-gray-400 italic bg-white rounded-xl border border-gray-100">
+                          No key definitions listed.
+                        </div>
+                      ) : (
+                        <ul className="space-y-3">
+                          {currentNotes.key_terms?.map((term, tIdx) => (
+                            <li key={tIdx} className="bg-white p-3 rounded-xl border border-gray-250/60 border-gray-200 shadow-2xs">
+                              <div className="font-bold text-xs text-indigo-750 text-indigo-700">{term.term}</div>
+                              <div className="text-2xs text-gray-600 mt-1 leading-normal">{term.definition}</div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
+                  </div>
+
+                </div>
+              )}
 
             </div>
           )}
