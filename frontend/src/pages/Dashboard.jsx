@@ -16,7 +16,7 @@ const Dashboard = () => {
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
 
-  // Right Panel tab selection: 'chat' | 'notes'
+  // Right Panel tab selection: 'chat' | 'notes' | 'flashcards'
   const [activeTab, setActiveTab] = useState('chat');
 
   // Q&A Chat states
@@ -30,6 +30,14 @@ const Dashboard = () => {
   const [notesLoading, setNotesLoading] = useState(false);
   const [notesError, setNotesError] = useState('');
   const [expandedSections, setExpandedSections] = useState({}); // sectionIndex -> bool
+
+  // Flashcards states
+  const [sessionFlashcards, setSessionFlashcards] = useState({}); // docId -> flashcardsList
+  const [flashcardsLoading, setFlashcardsLoading] = useState(false);
+  const [flashcardsError, setFlashcardsError] = useState('');
+  const [currentCardIndex, setCurrentCardIndex] = useState(0);
+  const [flipped, setFlipped] = useState(false);
+  const [topicFilter, setTopicFilter] = useState('All');
 
   // 1. Fetch documents list on mount
   const fetchDocuments = async () => {
@@ -80,11 +88,15 @@ const Dashboard = () => {
     };
   }, [pendingIds.join(',')]);
 
-  // 3. Clear Chat history when selection changes
+  // 3. Clear Right Panel states when selection changes
   useEffect(() => {
     setChatHistory([]);
     setQuestion('');
     setNotesError('');
+    setFlashcardsError('');
+    setCurrentCardIndex(0);
+    setFlipped(false);
+    setTopicFilter('All');
     setActiveTab('chat'); // default to chat on document change
   }, [selectedDocId]);
 
@@ -196,13 +208,11 @@ const Dashboard = () => {
 
       const notesData = response.data;
       
-      // Cache in session mapping
       setSessionNotes((prev) => ({
         ...prev,
         [selectedDocId]: notesData,
       }));
 
-      // Initialize sections expand states (First expanded, others collapsed)
       const initialExpand = {};
       if (notesData.sections) {
         notesData.sections.forEach((_, idx) => {
@@ -220,8 +230,64 @@ const Dashboard = () => {
     }
   };
 
-  // Check if notes already exist in session
+  // 7. Handle Flashcards Generation & Caching
+  const triggerFlashcardsGeneration = async (force = false) => {
+    if (!selectedDocId) return;
+    setFlashcardsLoading(true);
+    setFlashcardsError('');
+    setCurrentCardIndex(0);
+    setFlipped(false);
+    setTopicFilter('All');
+
+    try {
+      const response = await apiClient.post('/flashcards/generate', {
+        document_id: selectedDocId,
+        force_regenerate: force,
+      });
+
+      const cardsList = response.data.flashcards;
+
+      setSessionFlashcards((prev) => ({
+        ...prev,
+        [selectedDocId]: cardsList,
+      }));
+    } catch (err) {
+      console.error(err);
+      setFlashcardsError(
+        err.response?.data?.detail || 'Failed to generate flashcards. Please try again.'
+      );
+    } finally {
+      setFlashcardsLoading(false);
+    }
+  };
+
+  // Caching getters
   const currentNotes = sessionNotes[selectedDocId];
+  const allFlashcards = sessionFlashcards[selectedDocId] || [];
+
+  // Filter flashcards by topic dropdown
+  const uniqueTopics = ['All', ...new Set(allFlashcards.map((c) => c.topic))];
+  const filteredFlashcards = topicFilter === 'All'
+    ? allFlashcards
+    : allFlashcards.filter((c) => c.topic === topicFilter);
+
+  const displayCard = filteredFlashcards[currentCardIndex];
+
+  const handleTopicFilterChange = (e) => {
+    setTopicFilter(e.target.value);
+    setCurrentCardIndex(0);
+    setFlipped(false);
+  };
+
+  const nextCard = () => {
+    setFlipped(false);
+    setCurrentCardIndex((prev) => Math.min(prev + 1, filteredFlashcards.length - 1));
+  };
+
+  const prevCard = () => {
+    setFlipped(false);
+    setCurrentCardIndex((prev) => Math.max(prev - 1, 0));
+  };
 
   const toggleSection = (index) => {
     setExpandedSections((prev) => ({
@@ -367,13 +433,13 @@ const Dashboard = () => {
           </section>
         </div>
 
-        {/* Right Column (Q&A / Notes Tabs Panel) - 7 Cols */}
+        {/* Right Column (Q&A / Notes / Flashcards Tabs Panel) - 7 Cols */}
         <div className="lg:col-span-7 bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden flex flex-col min-h-[450px]">
           
           {/* Header & Tabs */}
           <div className="bg-gray-50 border-b border-gray-100 p-4 flex-shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-3">
                 <button
                   onClick={() => setActiveTab('chat')}
                   className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
@@ -393,6 +459,16 @@ const Dashboard = () => {
                   }`}
                 >
                   Study Notes
+                </button>
+                <button
+                  onClick={() => setActiveTab('flashcards')}
+                  className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
+                    activeTab === 'flashcards'
+                      ? 'border-indigo-600 text-indigo-700'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Flashcards
                 </button>
               </div>
               {selectedDocId && (
@@ -415,11 +491,11 @@ const Dashboard = () => {
           {!selectedDocId ? (
             <div className="flex-grow flex flex-col items-center justify-center p-8 text-center bg-gray-50/50">
               <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center text-3xl mb-4 shadow-inner">
-                📚
+                🎓
               </div>
               <h3 className="text-base font-bold text-gray-900">No Document Selected</h3>
               <p className="text-sm text-gray-500 mt-2 max-w-sm leading-relaxed">
-                Select a processed document on the left to start asking questions or generate structured study notes.
+                Select a processed document on the left to start asking questions, generate structured study notes, or practice active recall flashcards.
               </p>
             </div>
           ) : activeTab === 'chat' ? (
@@ -438,7 +514,7 @@ const Dashboard = () => {
                   return (
                     <div key={idx} className="space-y-2">
                       <div className="flex justify-end">
-                        <div className="bg-indigo-650 bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-md text-sm font-medium shadow-sm">
+                        <div className="bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-md text-sm font-medium shadow-sm">
                           {chat.question}
                         </div>
                       </div>
@@ -496,7 +572,7 @@ const Dashboard = () => {
                 </button>
               </form>
             </div>
-          ) : (
+          ) : activeTab === 'notes' ? (
             /* TAB 2: Notes Interface */
             <div className="flex-grow flex flex-col overflow-hidden bg-gray-50/30">
               
@@ -536,7 +612,6 @@ const Dashboard = () => {
               {currentNotes && !notesLoading && (
                 <div className="flex-grow flex flex-col overflow-hidden">
                   
-                  {/* Notes Control Subheader */}
                   <div className="bg-white border-b border-gray-150 px-4 py-2 flex justify-between items-center flex-shrink-0 text-xs">
                     <span className="font-semibold text-gray-800">
                       Title: {currentNotes.title || 'Structured Study Notes'}
@@ -555,10 +630,7 @@ const Dashboard = () => {
                     </div>
                   )}
 
-                  {/* Dual Panel Notes view */}
                   <div className="flex-grow flex flex-col md:flex-row overflow-hidden">
-                    
-                    {/* Left Panel: Sections List (Collapsible) */}
                     <div className="flex-grow md:w-3/5 p-4 overflow-y-auto space-y-3">
                       {currentNotes.sections?.map((section, idx) => {
                         const isExpanded = !!expandedSections[idx];
@@ -587,7 +659,6 @@ const Dashboard = () => {
                       })}
                     </div>
 
-                    {/* Right Panel: Key Terms Sidebar */}
                     <div className="md:w-2/5 bg-gray-50 border-t md:border-t-0 md:border-l border-gray-200 p-4 overflow-y-auto flex flex-col">
                       <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Key Terms</h3>
                       
@@ -598,16 +669,157 @@ const Dashboard = () => {
                       ) : (
                         <ul className="space-y-3">
                           {currentNotes.key_terms?.map((term, tIdx) => (
-                            <li key={tIdx} className="bg-white p-3 rounded-xl border border-gray-250/60 border-gray-200 shadow-2xs">
-                              <div className="font-bold text-xs text-indigo-750 text-indigo-700">{term.term}</div>
+                            <li key={tIdx} className="bg-white p-3 rounded-xl border border-gray-200 shadow-2xs">
+                              <div className="font-bold text-xs text-indigo-700">{term.term}</div>
                               <div className="text-2xs text-gray-600 mt-1 leading-normal">{term.definition}</div>
                             </li>
                           ))}
                         </ul>
                       )}
                     </div>
-
                   </div>
+
+                </div>
+              )}
+            </div>
+          ) : (
+            /* TAB 3: Flashcards Interface */
+            <div className="flex-grow flex flex-col overflow-hidden bg-gray-50/30">
+              {allFlashcards.length === 0 && !flashcardsLoading && (
+                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
+                  <h3 className="text-base font-bold text-gray-900">Flashcards Not Generated</h3>
+                  <p className="text-xs text-gray-500 mt-2 max-w-xs leading-relaxed">
+                    Generate active-recall flashcards with questions and answers based on this study document.
+                  </p>
+
+                  {flashcardsError && (
+                    <div className="mt-4 max-w-sm rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
+                      {flashcardsError}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => triggerFlashcardsGeneration(false)}
+                    className="mt-5 rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md transition"
+                  >
+                    Generate Flashcards
+                  </button>
+                </div>
+              )}
+
+              {flashcardsLoading && (
+                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
+                  <svg className="animate-spin h-10 w-10 text-indigo-600 mb-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  <h4 className="text-sm font-bold text-gray-900">Creating Flashcards...</h4>
+                  <p className="text-2xs text-gray-500 mt-1">Extracting testable concepts and questions...</p>
+                </div>
+              )}
+
+              {allFlashcards.length > 0 && !flashcardsLoading && (
+                <div className="flex-grow flex flex-col p-6 justify-between overflow-y-auto">
+                  
+                  {/* Topic Filter Dropdown & Regenerate */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                    <div className="flex items-center space-x-2">
+                      <label htmlFor="topic-select" className="text-xs font-semibold text-gray-600">
+                        Topic:
+                      </label>
+                      <select
+                        id="topic-select"
+                        value={topicFilter}
+                        onChange={handleTopicFilterChange}
+                        className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                      >
+                        {uniqueTopics.map((topic, index) => (
+                          <option key={index} value={topic}>
+                            {topic}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <button
+                      onClick={() => triggerFlashcardsGeneration(true)}
+                      className="text-2xs text-indigo-600 hover:text-indigo-850 font-bold hover:underline self-end sm:self-auto"
+                    >
+                      Regenerate Deck
+                    </button>
+                  </div>
+
+                  {flashcardsError && (
+                    <div className="mb-4 rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
+                      ⚠️ {flashcardsError} (Showing cached deck)
+                    </div>
+                  )}
+
+                  {filteredFlashcards.length === 0 ? (
+                    <div className="flex-grow flex items-center justify-center text-center py-12 text-slate-400 text-xs italic">
+                      No flashcards found matching the selected topic filter.
+                    </div>
+                  ) : (
+                    <div className="flex-grow flex flex-col justify-center items-center py-4 space-y-6">
+                      
+                      {/* Active Recall Card */}
+                      <div
+                        onClick={() => setFlipped(!flipped)}
+                        className={`w-full max-w-md min-h-[180px] flex flex-col justify-between p-6 rounded-2xl border cursor-pointer select-none transition-all shadow-md ${
+                          flipped
+                            ? 'bg-indigo-50 border-indigo-300 ring-4 ring-indigo-500/10'
+                            : 'bg-white border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center text-3xs font-bold uppercase tracking-wider text-gray-400">
+                          <span>Topic: {displayCard.topic}</span>
+                          <span className={flipped ? 'text-indigo-600' : 'text-gray-400'}>
+                            {flipped ? 'Answer' : 'Question'}
+                          </span>
+                        </div>
+
+                        <div className="my-auto py-4 text-center">
+                          {flipped ? (
+                            <div className="text-gray-800 text-sm md:text-base font-semibold leading-relaxed">
+                              {displayCard.back}
+                            </div>
+                          ) : (
+                            <div className="text-gray-900 text-sm md:text-base font-bold leading-relaxed">
+                              {displayCard.front}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="text-center text-3xs text-slate-400 uppercase tracking-widest">
+                          {flipped ? 'Click to show question' : 'Click to flip and show answer'}
+                        </div>
+                      </div>
+
+                      {/* Card Deck Progress Bar */}
+                      <div className="text-xs font-semibold text-gray-500">
+                        Card {currentCardIndex + 1} of {filteredFlashcards.length}
+                      </div>
+
+                      {/* Navigation Controls */}
+                      <div className="flex items-center space-x-4">
+                        <button
+                          onClick={prevCard}
+                          disabled={currentCardIndex === 0}
+                          className="rounded-lg border border-gray-350 border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
+                        >
+                          ◀ Prev
+                        </button>
+                        <button
+                          onClick={nextCard}
+                          disabled={currentCardIndex === filteredFlashcards.length - 1}
+                          className="rounded-lg border border-gray-350 border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
+                        >
+                          Next ▶
+                        </button>
+                      </div>
+
+                    </div>
+                  )}
 
                 </div>
               )}
