@@ -5,6 +5,9 @@ import apiClient from '../api/client';
 const Dashboard = () => {
   const { user, logout } = useContext(AuthContext);
 
+  // View state: 'workspace' | 'analytics'
+  const [currentView, setCurrentView] = useState('workspace');
+
   // Documents listing & selection
   const [documents, setDocuments] = useState([]);
   const [selectedDocId, setSelectedDocId] = useState(null);
@@ -61,6 +64,12 @@ const Dashboard = () => {
   const [historyList, setHistoryList] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  // Analytics states
+  const [weakTopics, setWeakTopics] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState('');
+
   // 1. Fetch documents list and history on mount
   const fetchDocuments = async () => {
     setLoadingList(true);
@@ -86,10 +95,37 @@ const Dashboard = () => {
     }
   };
 
+  const fetchAnalytics = async () => {
+    setLoadingAnalytics(true);
+    setAnalyticsError('');
+    try {
+      const [topicsRes, recsRes] = await Promise.all([
+        apiClient.get('/analytics/weak-topics'),
+        apiClient.get('/analytics/recommendations'),
+      ]);
+      setWeakTopics(topicsRes.data.weak_topics || []);
+      setRecommendations(recsRes.data.recommendations || []);
+    } catch (err) {
+      console.error('Failed to fetch analytics', err);
+      setAnalyticsError(
+        err.response?.data?.detail || 'Failed to load progress analytics. Please try again.'
+      );
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  };
+
   useEffect(() => {
     fetchDocuments();
     fetchQuizHistory();
   }, []);
+
+  // Fetch analytics when view changes to My Progress
+  useEffect(() => {
+    if (currentView === 'analytics') {
+      fetchAnalytics();
+    }
+  }, [currentView]);
 
   // 2. Poll status for pending documents
   const pendingIds = documents
@@ -356,8 +392,9 @@ const Dashboard = () => {
         answers: formattedAnswers,
       });
       setQuizResult(response.data);
-      // Refresh history list immediately so the new attempt appears
+      // Refresh history list and analytics immediately
       fetchQuizHistory();
+      fetchAnalytics();
     } catch (err) {
       console.error(err);
       setMcqsError(
@@ -420,8 +457,9 @@ const Dashboard = () => {
         answers: formattedAnswers,
       });
       setSaQuizResult(response.data);
-      // Refresh history list immediately so the new attempt appears
+      // Refresh history list and analytics immediately
       fetchQuizHistory();
+      fetchAnalytics();
     } catch (err) {
       console.error(err);
       setSaError(
@@ -429,6 +467,14 @@ const Dashboard = () => {
       );
     } finally {
       setSubmittingSaQuiz(false);
+    }
+  };
+
+  const handleRecommendationClick = (docId) => {
+    if (docId && docId !== 'unknown') {
+      setSelectedDocId(docId);
+      setCurrentView('workspace');
+      setActiveTab('notes'); // Open study notes instantly for revision
     }
   };
 
@@ -477,18 +523,60 @@ const Dashboard = () => {
       <nav className="bg-white shadow-sm flex-shrink-0">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 justify-between items-center">
-            <div className="flex-shrink-0 flex items-center space-x-2">
-              <span className="text-xl font-bold text-indigo-600 bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent">
+            <div className="flex items-center space-x-6">
+              <span className="text-xl font-bold text-indigo-650 bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent">
                 AI Study Companion
               </span>
+              <div className="hidden sm:flex space-x-2">
+                <button
+                  onClick={() => setCurrentView('workspace')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition ${
+                    currentView === 'workspace'
+                      ? 'bg-indigo-50 text-indigo-700'
+                      : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                  }`}
+                >
+                  Workspace
+                </button>
+                <button
+                  onClick={() => setCurrentView('analytics')}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition ${
+                    currentView === 'analytics'
+                      ? 'bg-indigo-50 text-indigo-700'
+                      : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                  }`}
+                >
+                  My Progress
+                </button>
+              </div>
             </div>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-700">
+              {/* Mobile View Toggle Buttons */}
+              <div className="flex sm:hidden space-x-1">
+                <button
+                  onClick={() => setCurrentView('workspace')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-bold ${
+                    currentView === 'workspace' ? 'bg-indigo-550 bg-indigo-600 text-white' : 'text-gray-500'
+                  }`}
+                >
+                  Study
+                </button>
+                <button
+                  onClick={() => setCurrentView('analytics')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-bold ${
+                    currentView === 'analytics' ? 'bg-indigo-550 bg-indigo-600 text-white' : 'text-gray-500'
+                  }`}
+                >
+                  Progress
+                </button>
+              </div>
+
+              <span className="text-sm text-gray-705 text-gray-700 hidden md:inline">
                 Welcome, <strong>{user?.name || 'Student'}</strong>!
               </span>
               <button
                 onClick={logout}
-                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition"
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition"
               >
                 Sign out
               </button>
@@ -497,505 +585,507 @@ const Dashboard = () => {
         </div>
       </nav>
 
-      {/* Two-Column Grid Layout */}
-      <div className="flex-grow mx-auto max-w-7xl w-full px-4 py-8 sm:px-6 lg:px-8 space-y-8 overflow-y-auto">
-        
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Left Column (Upload + List) - 5 Cols */}
-          <div className="lg:col-span-5 space-y-6 flex flex-col">
-            {/* SECTION 1: Document Upload */}
-            <section className="bg-white rounded-2xl p-6 shadow-md border border-gray-100 flex-shrink-0">
-              <h2 className="text-lg font-bold text-gray-900 mb-4">Upload Study Material</h2>
-              
-              {uploadSuccess && (
-                <div className="mb-4 rounded-md bg-green-50 p-4 text-sm text-green-700 border border-green-200">
-                  {uploadSuccess}
-                </div>
-              )}
-
-              {uploadError && (
-                <div className="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-700 border border-red-200">
-                  {uploadError}
-                </div>
-              )}
-
-              <form onSubmit={handleUploadSubmit} className="space-y-4">
-                <div className="flex flex-col gap-3">
-                  <input
-                    type="file"
-                    accept=".pdf,.pptx,.ppt"
-                    onChange={handleFileChange}
-                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
-                  />
-                  <button
-                    type="submit"
-                    disabled={uploading || !file}
-                    className="inline-flex justify-center items-center w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-sm"
-                  >
-                    {uploading ? 'Uploading...' : 'Upload File'}
-                  </button>
-                </div>
-                <p className="text-xs text-gray-500 text-center">
-                  Supported: PDF, PPTX, PPT (Max 20MB)
-                </p>
-              </form>
-            </section>
-
-            {/* SECTION 2: Document List */}
-            <section className="bg-white rounded-2xl p-6 shadow-md border border-gray-100 flex-grow flex flex-col min-h-[300px]">
-              <div className="flex justify-between items-center mb-4 flex-shrink-0">
-                <h2 className="text-lg font-bold text-gray-900">Your Documents</h2>
-                <button
-                  onClick={fetchDocuments}
-                  className="text-xs font-semibold text-indigo-600 hover:text-indigo-850"
-                >
-                  Refresh List
-                </button>
-              </div>
-
-              <div className="flex-grow overflow-y-auto max-h-[350px]">
-                {loadingList && documents.length === 0 ? (
-                  <div className="text-center py-8 text-sm text-gray-500">Loading documents...</div>
-                ) : documents.length === 0 ? (
-                  <div className="text-center py-12 text-sm text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
-                    No documents uploaded yet.
-                  </div>
-                ) : (
-                  <ul className="space-y-3">
-                    {documents.map((doc) => {
-                      const isSelected = selectedDocId === doc.id;
-                      const isProcessed = doc.status === 'processed';
-
-                      return (
-                        <li
-                          key={doc.id}
-                          onClick={() => isProcessed && setSelectedDocId(doc.id)}
-                          className={`p-4 rounded-xl border text-left transition ${
-                            isProcessed ? 'cursor-pointer' : 'opacity-65 cursor-not-allowed'
-                          } ${
-                            isSelected
-                              ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500/20'
-                              : 'bg-white border-gray-200 hover:bg-gray-50'
-                          }`}
-                        >
-                          <div className="flex justify-between items-start gap-2">
-                            <div className="font-semibold text-sm text-gray-900 truncate">
-                              {doc.filename}
-                            </div>
-                            <span
-                              className={`inline-flex px-2 py-0.5 text-2xs font-semibold rounded-full uppercase ${
-                                doc.status === 'processed'
-                                  ? 'bg-green-50 text-green-700 border border-green-200'
-                                  : doc.status === 'failed'
-                                  ? 'bg-red-50 text-red-700 border border-red-200'
-                                  : 'bg-yellow-50 text-yellow-700 border border-yellow-200 animate-pulse'
-                              }`}
-                            >
-                              {doc.status}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center mt-2 text-2xs text-gray-500">
-                            <span>Format: {doc.file_type}</span>
-                            <span>{new Date(doc.created_at).toLocaleDateString()}</span>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            </section>
-          </div>
-
-          {/* Right Column (Q&A / Notes / Flashcards / MCQ / Short Answer Tabs Panel) - 7 Cols */}
-          <div className="lg:col-span-7 bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden flex flex-col min-h-[450px]">
-            
-            {/* Header & Tabs */}
-            <div className="bg-gray-50 border-b border-gray-100 p-4 flex-shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    onClick={() => setActiveTab('chat')}
-                    className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
-                      activeTab === 'chat'
-                        ? 'border-indigo-600 text-indigo-700'
-                        : 'border-transparent text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    Q&amp;A Chat
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('notes')}
-                    className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
-                      activeTab === 'notes'
-                        ? 'border-indigo-600 text-indigo-700'
-                        : 'border-transparent text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    Study Notes
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('flashcards')}
-                    className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
-                      activeTab === 'flashcards'
-                        ? 'border-indigo-600 text-indigo-700'
-                        : 'border-transparent text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    Flashcards
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('mcqs')}
-                    className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
-                      activeTab === 'mcqs'
-                        ? 'border-indigo-600 text-indigo-700'
-                        : 'border-transparent text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    MCQ Quiz
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('short_answer')}
-                    className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
-                      activeTab === 'short_answer'
-                        ? 'border-indigo-600 text-indigo-700'
-                        : 'border-transparent text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    Short-Answer
-                  </button>
-                </div>
-                {selectedDocId && (
-                  <p className="text-2xs text-gray-500 mt-1 truncate max-w-sm">
-                    Active file: {selectedDocName}
-                  </p>
-                )}
-              </div>
-              {selectedDocId && (
-                <button
-                  onClick={() => setSelectedDocId(null)}
-                  className="text-2xs font-bold text-red-600 hover:text-red-800 self-start sm:self-auto"
-                >
-                  Clear Selection
-                </button>
-              )}
-            </div>
-
-            {/* Panel Contents */}
-            {!selectedDocId ? (
-              <div className="flex-grow flex flex-col items-center justify-center p-8 text-center bg-gray-50/50">
-                <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center text-3xl mb-4 shadow-inner">
-                  🎓
-                </div>
-                <h3 className="text-base font-bold text-gray-900">No Document Selected</h3>
-                <p className="text-sm text-gray-500 mt-2 max-w-sm leading-relaxed">
-                  Select a processed document on the left to start asking questions, generate study notes, practice flashcards, or take MCQ/Short-Answer tests.
-                </p>
-              </div>
-            ) : activeTab === 'chat' ? (
-              /* TAB 1: Chat interface */
-              <div className="flex-grow flex flex-col justify-between overflow-hidden">
-                <div className="flex-grow p-4 overflow-y-auto space-y-4">
-                  {chatHistory.length === 0 && !asking && (
-                    <div className="text-center py-12 text-slate-400 text-xs italic">
-                      Type a question below to query the selected study material...
-                    </div>
-                  )}
-
-                  {chatHistory.map((chat, idx) => {
-                    const isRefusal = chat.answer === "I couldn't find this in your uploaded material.";
-                    
-                    return (
-                      <div key={idx} className="space-y-2">
-                        <div className="flex justify-end">
-                          <div className="bg-indigo-650 bg-indigo-650 bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-md text-sm font-medium shadow-sm">
-                            {chat.question}
-                          </div>
-                        </div>
-
-                        <div className="flex justify-start">
-                          {chat.loading ? (
-                            <div className="bg-gray-100 text-gray-500 rounded-2xl rounded-tl-sm px-4 py-2.5 flex items-center space-x-2 text-sm shadow-sm">
-                              <span className="flex h-2 w-2 relative">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
-                              </span>
-                              <span>Thinking...</span>
-                            </div>
-                          ) : chat.error ? (
-                            <div className="bg-red-50 text-red-700 border border-red-150 rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-md text-sm shadow-sm">
-                              <strong className="block text-2xs uppercase tracking-wider text-red-650 font-bold mb-1">
-                                System Error
-                              </strong>
-                              {chat.error}
-                            </div>
-                          ) : (
-                            <div
-                              className={`rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-md text-sm leading-relaxed shadow-sm ${
-                                isRefusal
-                                  ? 'bg-gray-50 text-gray-500 italic border border-gray-200'
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}
-                            >
-                              {chat.answer}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <div ref={chatEndRef} />
-                </div>
-
-                <form onSubmit={handleAskSubmit} className="p-4 bg-gray-50 border-t border-gray-100 flex-shrink-0 flex gap-2">
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ask a question about the document..."
-                    value={question}
-                    onChange={(e) => setQuestion(e.target.value)}
-                    disabled={asking}
-                    className="flex-grow rounded-lg border border-gray-300 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-60 bg-white"
-                  />
-                  <button
-                    type="submit"
-                    disabled={asking || !question.trim()}
-                    className="rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-sm font-semibold hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 transition shadow-sm"
-                  >
-                    Ask
-                  </button>
-                </form>
-              </div>
-            ) : activeTab === 'notes' ? (
-              /* TAB 2: Notes Interface */
-              <div className="flex-grow flex flex-col overflow-hidden bg-gray-50/30">
+      {/* Main Container */}
+      {currentView === 'workspace' ? (
+        /* VIEW 1: Study Workspace Grid (Original upload/documents/tabs view) */
+        <div className="flex-grow mx-auto max-w-7xl w-full px-4 py-8 sm:px-6 lg:px-8 space-y-8 overflow-y-auto">
+          
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            {/* Left Column (Upload + List) - 5 Cols */}
+            <div className="lg:col-span-5 space-y-6 flex flex-col">
+              {/* SECTION 1: Document Upload */}
+              <section className="bg-white rounded-2xl p-6 shadow-md border border-gray-100 flex-shrink-0">
+                <h2 className="text-lg font-bold text-gray-900 mb-4">Upload Study Material</h2>
                 
-                {!currentNotes && !notesLoading && (
-                  <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
-                    <h3 className="text-base font-bold text-gray-900">Notes Not Generated</h3>
-                    <p className="text-xs text-gray-500 mt-2 max-w-xs leading-relaxed">
-                      Convert this document's text into structured study notes, key terms, and summary headings.
-                    </p>
-                    
-                    {notesError && (
-                      <div className="mt-4 max-w-sm rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
-                        {notesError}
-                      </div>
-                    )}
+                {uploadSuccess && (
+                  <div className="mb-4 rounded-md bg-green-50 p-4 text-sm text-green-700 border border-green-200">
+                    {uploadSuccess}
+                  </div>
+                )}
 
+                {uploadError && (
+                  <div className="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-700 border border-red-200">
+                    {uploadError}
+                  </div>
+                )}
+
+                <form onSubmit={handleUploadSubmit} className="space-y-4">
+                  <div className="flex flex-col gap-3">
+                    <input
+                      type="file"
+                      accept=".pdf,.pptx,.ppt"
+                      onChange={handleFileChange}
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
+                    />
                     <button
-                      onClick={() => triggerNotesGeneration(false)}
-                      className="mt-5 rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md transition"
+                      type="submit"
+                      disabled={uploading || !file}
+                      className="inline-flex justify-center items-center w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-sm"
                     >
-                      Generate Notes
+                      {uploading ? 'Uploading...' : 'Upload File'}
                     </button>
                   </div>
-                )}
+                  <p className="text-xs text-gray-500 text-center">
+                    Supported: PDF, PPTX, PPT (Max 20MB)
+                  </p>
+                </form>
+              </section>
 
-                {notesLoading && (
-                  <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
-                    <svg className="animate-spin h-10 w-10 text-indigo-600 mb-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                    </svg>
-                    <h4 className="text-sm font-bold text-gray-900">Structuring Study Notes...</h4>
-                    <p className="text-2xs text-gray-500 mt-1">This takes 5-10 seconds to read and organize the source content.</p>
+              {/* SECTION 2: Document List */}
+              <section className="bg-white rounded-2xl p-6 shadow-md border border-gray-100 flex-grow flex flex-col min-h-[300px]">
+                <div className="flex justify-between items-center mb-4 flex-shrink-0">
+                  <h2 className="text-lg font-bold text-gray-900">Your Documents</h2>
+                  <button
+                    onClick={fetchDocuments}
+                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-850"
+                  >
+                    Refresh List
+                  </button>
+                </div>
+
+                <div className="flex-grow overflow-y-auto max-h-[350px]">
+                  {loadingList && documents.length === 0 ? (
+                    <div className="text-center py-8 text-sm text-gray-500">Loading documents...</div>
+                  ) : documents.length === 0 ? (
+                    <div className="text-center py-12 text-sm text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
+                      No documents uploaded yet.
+                    </div>
+                  ) : (
+                    <ul className="space-y-3">
+                      {documents.map((doc) => {
+                        const isSelected = selectedDocId === doc.id;
+                        const isProcessed = doc.status === 'processed';
+
+                        return (
+                          <li
+                            key={doc.id}
+                            onClick={() => isProcessed && setSelectedDocId(doc.id)}
+                            className={`p-4 rounded-xl border text-left transition ${
+                              isProcessed ? 'cursor-pointer' : 'opacity-65 cursor-not-allowed'
+                            } ${
+                              isSelected
+                                ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500/20'
+                                : 'bg-white border-gray-200 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className="flex justify-between items-start gap-2">
+                              <div className="font-semibold text-sm text-gray-900 truncate">
+                                {doc.filename}
+                              </div>
+                              <span
+                                className={`inline-flex px-2 py-0.5 text-2xs font-semibold rounded-full uppercase ${
+                                  doc.status === 'processed'
+                                    ? 'bg-green-50 text-green-700 border border-green-200'
+                                    : doc.status === 'failed'
+                                    ? 'bg-red-50 text-red-700 border border-red-200'
+                                    : 'bg-yellow-50 text-yellow-700 border border-yellow-200 animate-pulse'
+                                }`}
+                              >
+                                {doc.status}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center mt-2 text-2xs text-gray-500">
+                              <span>Format: {doc.file_type}</span>
+                              <span>{new Date(doc.created_at).toLocaleDateString()}</span>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            {/* Right Column (Q&A / Notes / Flashcards / MCQ / Short Answer Tabs Panel) - 7 Cols */}
+            <div className="lg:col-span-7 bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden flex flex-col min-h-[450px]">
+              
+              {/* Header & Tabs */}
+              <div className="bg-gray-50 border-b border-gray-100 p-4 flex-shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={() => setActiveTab('chat')}
+                      className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
+                        activeTab === 'chat'
+                          ? 'border-indigo-600 text-indigo-700'
+                          : 'border-transparent text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Q&amp;A Chat
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('notes')}
+                      className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
+                        activeTab === 'notes'
+                          ? 'border-indigo-600 text-indigo-700'
+                          : 'border-transparent text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Study Notes
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('flashcards')}
+                      className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
+                        activeTab === 'flashcards'
+                          ? 'border-indigo-600 text-indigo-700'
+                          : 'border-transparent text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Flashcards
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('mcqs')}
+                      className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
+                        activeTab === 'mcqs'
+                      ? 'border-indigo-600 text-indigo-700'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  MCQ Quiz
+                </button>
+                <button
+                  onClick={() => setActiveTab('short_answer')}
+                  className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
+                    activeTab === 'short_answer'
+                      ? 'border-indigo-600 text-indigo-700'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Short-Answer
+                </button>
+              </div>
+              {selectedDocId && (
+                <p className="text-2xs text-gray-500 mt-1 truncate max-w-sm">
+                  Active file: {selectedDocName}
+                </p>
+              )}
+            </div>
+            {selectedDocId && (
+              <button
+                onClick={() => setSelectedDocId(null)}
+                className="text-2xs font-bold text-red-600 hover:text-red-800 self-start sm:self-auto"
+              >
+                Clear Selection
+              </button>
+            )}
+          </div>
+
+          {/* Panel Contents */}
+          {!selectedDocId ? (
+            <div className="flex-grow flex flex-col items-center justify-center p-8 text-center bg-gray-50/50">
+              <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center text-3xl mb-4 shadow-inner">
+                🎓
+              </div>
+              <h3 className="text-base font-bold text-gray-900">No Document Selected</h3>
+              <p className="text-sm text-gray-500 mt-2 max-w-sm leading-relaxed">
+                Select a processed document on the left to start asking questions, generate study notes, practice flashcards, or take MCQ/Short-Answer tests.
+              </p>
+            </div>
+          ) : activeTab === 'chat' ? (
+            /* TAB 1: Chat interface */
+            <div className="flex-grow flex flex-col justify-between overflow-hidden">
+              <div className="flex-grow p-4 overflow-y-auto space-y-4">
+                {chatHistory.length === 0 && !asking && (
+                  <div className="text-center py-12 text-slate-400 text-xs italic">
+                    Type a question below to query the selected study material...
                   </div>
                 )}
 
-                {currentNotes && !notesLoading && (
-                  <div className="flex-grow flex flex-col overflow-hidden">
-                    
-                    <div className="bg-white border-b border-gray-150 px-4 py-2 flex justify-between items-center flex-shrink-0 text-xs">
-                      <span className="font-semibold text-gray-800">
-                        Title: {currentNotes.title || 'Structured Study Notes'}
-                      </span>
-                      <button
-                        onClick={() => triggerNotesGeneration(true)}
-                        className="text-2xs text-indigo-600 hover:text-indigo-850 font-bold hover:underline"
-                      >
-                        Regenerate
-                      </button>
-                    </div>
-
-                    {notesError && (
-                      <div className="bg-red-50 text-red-700 text-2xs p-3 border-b border-red-200">
-                        ⚠️ {notesError} (Showing last cached notes)
-                      </div>
-                    )}
-
-                    <div className="flex-grow flex flex-col md:flex-row overflow-hidden">
-                      <div className="flex-grow md:w-3/5 p-4 overflow-y-auto space-y-3">
-                        {currentNotes.sections?.map((section, idx) => {
-                          const isExpanded = !!expandedSections[idx];
-                          
-                          return (
-                            <div key={idx} className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-2xs">
-                              <button
-                                onClick={() => toggleSection(idx)}
-                                className="w-full text-left px-4 py-3 bg-gray-50 hover:bg-gray-100 flex justify-between items-center transition border-b border-gray-100"
-                              >
-                                <span className="font-bold text-sm text-gray-900">{section.heading}</span>
-                                <span className="text-xs text-gray-400 font-semibold">{isExpanded ? 'Collapse ▲' : 'Expand ▼'}</span>
-                              </button>
-
-                              {isExpanded && (
-                                <ul className="p-4 space-y-2 list-disc list-inside text-xs text-gray-700 leading-relaxed bg-white">
-                                  {section.points?.map((pt, pIdx) => (
-                                    <li key={pIdx} className="pl-1">
-                                      {pt}
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-                            </div>
-                          );
-                        })}
+                {chatHistory.map((chat, idx) => {
+                  const isRefusal = chat.answer === "I couldn't find this in your uploaded material.";
+                  
+                  return (
+                    <div key={idx} className="space-y-2">
+                      <div className="flex justify-end">
+                        <div className="bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-md text-sm font-medium shadow-sm">
+                          {chat.question}
+                        </div>
                       </div>
 
-                      <div className="md:w-2/5 bg-gray-50 border-t md:border-t-0 md:border-l border-gray-200 p-4 overflow-y-auto flex flex-col">
-                        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Key Terms</h3>
-                        
-                        {currentNotes.key_terms?.length === 0 ? (
-                          <div className="text-center py-6 text-2xs text-gray-400 italic bg-white rounded-xl border border-gray-100">
-                            No key definitions listed.
+                      <div className="flex justify-start">
+                        {chat.loading ? (
+                          <div className="bg-gray-100 text-gray-500 rounded-2xl rounded-tl-sm px-4 py-2.5 flex items-center space-x-2 text-sm shadow-sm">
+                            <span className="flex h-2 w-2 relative">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                            </span>
+                            <span>Thinking...</span>
+                          </div>
+                        ) : chat.error ? (
+                          <div className="bg-red-50 text-red-700 border border-red-150 rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-md text-sm shadow-sm">
+                            <strong className="block text-2xs uppercase tracking-wider text-red-650 font-bold mb-1">
+                              System Error
+                            </strong>
+                            {chat.error}
                           </div>
                         ) : (
-                          <ul className="space-y-3">
-                            {currentNotes.key_terms?.map((term, tIdx) => (
-                              <li key={tIdx} className="bg-white p-3 rounded-xl border border-gray-200 shadow-2xs">
-                                <div className="font-bold text-xs text-indigo-700">{term.term}</div>
-                                <div className="text-2xs text-gray-600 mt-1 leading-normal">{term.definition}</div>
-                              </li>
-                            ))}
-                          </ul>
+                          <div
+                            className={`rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-md text-sm leading-relaxed shadow-sm ${
+                              isRefusal
+                                ? 'bg-gray-50 text-gray-500 italic border border-gray-200'
+                                : 'bg-gray-100 text-gray-800'
+                            }`}
+                          >
+                            {chat.answer}
+                          </div>
                         )}
                       </div>
                     </div>
-
-                  </div>
-                )}
+                  );
+                })}
+                <div ref={chatEndRef} />
               </div>
-            ) : activeTab === 'flashcards' ? (
-              /* TAB 3: Flashcards Interface */
-              <div className="flex-grow flex flex-col overflow-hidden bg-gray-50/30">
-                {allFlashcards.length === 0 && !flashcardsLoading && (
-                  <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
-                    <h3 className="text-base font-bold text-gray-900">Flashcards Not Generated</h3>
-                    <p className="text-xs text-gray-500 mt-2 max-w-xs leading-relaxed">
-                      Generate active-recall flashcards with questions and answers based on this study document.
-                    </p>
 
-                    {flashcardsError && (
-                      <div className="mt-4 max-w-sm rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
-                        {flashcardsError}
-                      </div>
-                    )}
+              <form onSubmit={handleAskSubmit} className="p-4 bg-gray-50 border-t border-gray-100 flex-shrink-0 flex gap-2">
+                <input
+                  type="text"
+                  required
+                  placeholder="Ask a question about the document..."
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  disabled={asking}
+                  className="flex-grow rounded-lg border border-gray-300 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-60 bg-white"
+                />
+                <button
+                  type="submit"
+                  disabled={asking || !question.trim()}
+                  className="rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-sm font-semibold hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 transition shadow-sm"
+                >
+                  Ask
+                </button>
+              </form>
+            </div>
+          ) : activeTab === 'notes' ? (
+            /* TAB 2: Notes Interface */
+            <div className="flex-grow flex flex-col overflow-hidden bg-gray-50/30">
+              
+              {!currentNotes && !notesLoading && (
+                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
+                  <h3 className="text-base font-bold text-gray-900">Notes Not Generated</h3>
+                  <p className="text-xs text-gray-500 mt-2 max-w-xs leading-relaxed">
+                    Convert this document's text into structured study notes, key terms, and summary headings.
+                  </p>
+                  
+                  {notesError && (
+                    <div className="mt-4 max-w-sm rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
+                      {notesError}
+                    </div>
+                  )}
 
+                  <button
+                    onClick={() => triggerNotesGeneration(false)}
+                    className="mt-5 rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md transition"
+                  >
+                    Generate Notes
+                  </button>
+                </div>
+              )}
+
+              {notesLoading && (
+                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
+                  <svg className="animate-spin h-10 w-10 text-indigo-600 mb-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  <h4 className="text-sm font-bold text-gray-900">Structuring Study Notes...</h4>
+                  <p className="text-2xs text-gray-500 mt-1">This takes 5-10 seconds to read and organize the source content.</p>
+                </div>
+              )}
+
+              {currentNotes && !notesLoading && (
+                <div className="flex-grow flex flex-col overflow-hidden">
+                  
+                  <div className="bg-white border-b border-gray-150 px-4 py-2 flex justify-between items-center flex-shrink-0 text-xs">
+                    <span className="font-semibold text-gray-800">
+                      Title: {currentNotes.title || 'Structured Study Notes'}
+                    </span>
                     <button
-                      onClick={() => triggerFlashcardsGeneration(false)}
-                      className="mt-5 rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md transition"
+                      onClick={() => triggerNotesGeneration(true)}
+                      className="text-2xs text-indigo-600 hover:text-indigo-850 font-bold hover:underline"
                     >
-                      Generate Flashcards
+                      Regenerate
                     </button>
                   </div>
-                )}
 
-                {flashcardsLoading && (
-                  <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
-                    <svg className="animate-spin h-10 w-10 text-indigo-600 mb-4" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                    </svg>
-                    <h4 className="text-sm font-bold text-gray-900">Creating Flashcards...</h4>
-                    <p className="text-2xs text-gray-500 mt-1">Extracting testable concepts and questions...</p>
-                  </div>
-                )}
-
-                {allFlashcards.length > 0 && !flashcardsLoading && (
-                  <div className="flex-grow flex flex-col p-6 justify-between overflow-y-auto">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                      <div className="flex items-center space-x-2">
-                        <label htmlFor="topic-select" className="text-xs font-semibold text-gray-600">
-                          Topic:
-                        </label>
-                        <select
-                          id="topic-select"
-                          value={topicFilter}
-                          onChange={handleTopicFilterChange}
-                          className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
-                        >
-                          {uniqueTopics.map((topic, index) => (
-                            <option key={index} value={topic}>
-                              {topic}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <button
-                        onClick={() => triggerFlashcardsGeneration(true)}
-                        className="text-2xs text-indigo-600 hover:text-indigo-850 font-bold hover:underline self-end sm:self-auto"
-                      >
-                        Regenerate Deck
-                      </button>
+                  {notesError && (
+                    <div className="bg-red-50 text-red-700 text-2xs p-3 border-b border-red-200">
+                      ⚠️ {notesError} (Showing last cached notes)
                     </div>
+                  )}
 
-                    {flashcardsError && (
-                      <div className="mb-4 rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
-                        ⚠️ {flashcardsError} (Showing cached deck)
-                      </div>
-                    )}
+                  <div className="flex-grow flex flex-col md:flex-row overflow-hidden">
+                    <div className="flex-grow md:w-3/5 p-4 overflow-y-auto space-y-3">
+                      {currentNotes.sections?.map((section, idx) => {
+                        const isExpanded = !!expandedSections[idx];
+                        
+                        return (
+                          <div key={idx} className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-2xs">
+                            <button
+                              onClick={() => toggleSection(idx)}
+                              className="w-full text-left px-4 py-3 bg-gray-50 hover:bg-gray-100 flex justify-between items-center transition border-b border-gray-100"
+                            >
+                              <span className="font-bold text-sm text-gray-900">{section.heading}</span>
+                              <span className="text-xs text-gray-400 font-semibold">{isExpanded ? 'Collapse ▲' : 'Expand ▼'}</span>
+                            </button>
 
-                    {filteredFlashcards.length === 0 ? (
-                      <div className="flex-grow flex items-center justify-center text-center py-12 text-slate-400 text-xs italic">
-                        No flashcards found matching the selected topic filter.
-                      </div>
-                    ) : (
-                      <div className="flex-grow flex flex-col justify-center items-center py-4 space-y-6">
-                        <div
-                          onClick={() => setFlipped(!flipped)}
-                          className={`w-full max-w-md min-h-[180px] flex flex-col justify-between p-6 rounded-2xl border cursor-pointer select-none transition-all shadow-md ${
-                            flipped
-                              ? 'bg-indigo-50 border-indigo-300 ring-4 ring-indigo-500/10'
-                              : 'bg-white border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          <div className="flex justify-between items-center text-3xs font-bold uppercase tracking-wider text-gray-400">
-                            <span>Topic: {displayCard.topic}</span>
-                            <span className={flipped ? 'text-indigo-600' : 'text-gray-400'}>
-                              {flipped ? 'Answer' : 'Question'}
-                            </span>
-                          </div>
-
-                          <div className="my-auto py-4 text-center">
-                            {flipped ? (
-                              <div className="text-gray-800 text-sm md:text-base font-semibold leading-relaxed">
-                                {displayCard.back}
-                              </div>
-                            ) : (
-                              <div className="text-gray-900 text-sm md:text-base font-bold leading-relaxed">
-                                {displayCard.front}
-                              </div>
+                            {isExpanded && (
+                              <ul className="p-4 space-y-2 list-disc list-inside text-xs text-gray-700 leading-relaxed bg-white">
+                                {section.points?.map((pt, pIdx) => (
+                                  <li key={pIdx} className="pl-1">
+                                    {pt}
+                                  </li>
+                                ))}
+                              </ul>
                             )}
                           </div>
+                        );
+                      })}
+                    </div>
 
-                          <div className="text-center text-3xs text-slate-400 uppercase tracking-widest">
-                            {flipped ? 'Click to show question' : 'Click to flip and show answer'}
-                          </div>
+                    <div className="md:w-2/5 bg-gray-50 border-t md:border-t-0 md:border-l border-gray-200 p-4 overflow-y-auto flex flex-col">
+                      <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Key Terms</h3>
+                      
+                      {currentNotes.key_terms?.length === 0 ? (
+                        <div className="text-center py-6 text-2xs text-gray-400 italic bg-white rounded-xl border border-gray-100">
+                          No key definitions listed.
+                        </div>
+                      ) : (
+                        <ul className="space-y-3">
+                          {currentNotes.key_terms?.map((term, tIdx) => (
+                            <li key={tIdx} className="bg-white p-3 rounded-xl border border-gray-200 shadow-2xs">
+                              <div className="font-bold text-xs text-indigo-700">{term.term}</div>
+                              <div className="text-2xs text-gray-600 mt-1 leading-normal">{term.definition}</div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+              )}
+            </div>
+          ) : activeTab === 'flashcards' ? (
+            /* TAB 3: Flashcards Interface */
+            <div className="flex-grow flex flex-col overflow-hidden bg-gray-50/30">
+              {allFlashcards.length === 0 && !flashcardsLoading && (
+                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
+                  <h3 className="text-base font-bold text-gray-900">Flashcards Not Generated</h3>
+                  <p className="text-xs text-gray-500 mt-2 max-w-xs leading-relaxed">
+                    Generate active-recall flashcards with questions and answers based on this study document.
+                  </p>
+
+                  {flashcardsError && (
+                    <div className="mt-4 max-w-sm rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
+                      {flashcardsError}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => triggerFlashcardsGeneration(false)}
+                    className="mt-5 rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md transition"
+                  >
+                    Generate Flashcards
+                  </button>
+                </div>
+              )}
+
+              {flashcardsLoading && (
+                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
+                  <svg className="animate-spin h-10 w-10 text-indigo-600 mb-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  <h4 className="text-sm font-bold text-gray-900">Creating Flashcards...</h4>
+                  <p className="text-2xs text-gray-500 mt-1">Extracting testable concepts and questions...</p>
+                </div>
+              )}
+
+              {allFlashcards.length > 0 && !flashcardsLoading && (
+                <div className="flex-grow flex flex-col p-6 justify-between overflow-y-auto">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                    <div className="flex items-center space-x-2">
+                      <label htmlFor="topic-select" className="text-xs font-semibold text-gray-600">
+                        Topic:
+                      </label>
+                      <select
+                        id="topic-select"
+                        value={topicFilter}
+                        onChange={handleTopicFilterChange}
+                        className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                      >
+                        {uniqueTopics.map((topic, index) => (
+                          <option key={index} value={topic}>
+                            {topic}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <button
+                      onClick={() => triggerFlashcardsGeneration(true)}
+                      className="text-2xs text-indigo-600 hover:text-indigo-850 font-bold hover:underline self-end sm:self-auto"
+                    >
+                      Regenerate Deck
+                    </button>
+                  </div>
+
+                  {flashcardsError && (
+                    <div className="mb-4 rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
+                      ⚠️ {flashcardsError} (Showing cached deck)
+                    </div>
+                  )}
+
+                  {filteredFlashcards.length === 0 ? (
+                    <div className="flex-grow flex items-center justify-center text-center py-12 text-slate-400 text-xs italic">
+                      No flashcards found matching the selected topic filter.
+                    </div>
+                  ) : (
+                    <div className="flex-grow flex flex-col justify-center items-center py-4 space-y-6">
+                      <div
+                        onClick={() => setFlipped(!flipped)}
+                        className={`w-full max-w-md min-h-[180px] flex flex-col justify-between p-6 rounded-2xl border cursor-pointer select-none transition-all shadow-md ${
+                          flipped
+                            ? 'bg-indigo-50 border-indigo-300 ring-4 ring-indigo-500/10'
+                            : 'bg-white border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center text-3xs font-bold uppercase tracking-wider text-gray-400">
+                          <span>Topic: {displayCard.topic}</span>
+                          <span className={flipped ? 'text-indigo-600' : 'text-gray-400'}>
+                            {flipped ? 'Answer' : 'Question'}
+                          </span>
                         </div>
 
-                        <div className="text-xs font-semibold text-gray-500">
-                          Card {currentCardIndex + 1} of {filteredFlashcards.length}
+                        <div className="my-auto py-4 text-center">
+                          {flipped ? (
+                            <div className="text-gray-800 text-sm md:text-base font-semibold leading-relaxed">
+                              {displayCard.back}
+                            </div>
+                          ) : (
+                            <div className="text-gray-900 text-sm md:text-base font-bold leading-relaxed">
+                              {displayCard.front}
+                            </div>
+                          )}
                         </div>
 
-                        <div className="flex items-center space-x-4">
-                          <button
-                            onClick={prevCard}
-                            disabled={currentCardIndex === 0}
-                            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
-                          >
-                            ◀ Prev
+                        <div className="text-center text-3xs text-slate-400 uppercase tracking-widest">
+                          {flipped ? 'Click to show question' : 'Click to flip and show answer'}
+                        </div>
+                      </div>
+
+                      <div className="text-xs font-semibold text-gray-500">
+                        Card {currentCardIndex + 1} of {filteredFlashcards.length}
+                      </div>
+
+                      <div className="flex items-center space-x-4">
+                        <button
+                          onClick={prevCard}
+                          disabled={currentCardIndex === 0}
+                          className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
+                        >
+                          ◀ Prev
                         </button>
                         <button
                           onClick={nextCard}
@@ -1042,7 +1132,7 @@ const Dashboard = () => {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                   </svg>
-                  <h4 className="text-sm font-bold text-gray-900">Formulating Practice Quiz...</h4>
+                  <h4 className="text-sm font-bold text-gray-950 text-gray-905">Formulating Practice Quiz...</h4>
                   <p className="text-2xs text-gray-500 mt-1">Creating custom single-answer multiple-choice questions...</p>
                 </div>
               )}
@@ -1162,7 +1252,7 @@ const Dashboard = () => {
                     </div>
                   ) : (
                     <div className="space-y-6">
-                      <div className="bg-indigo-650 bg-indigo-600 text-white rounded-2xl p-6 text-center shadow-md relative overflow-hidden">
+                      <div className="bg-indigo-600 text-white rounded-2xl p-6 text-center shadow-md relative overflow-hidden">
                         <div className="absolute -top-12 -left-12 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
                         <div className="relative">
                           <h3 className="text-xs uppercase tracking-widest font-semibold text-indigo-200">
@@ -1171,7 +1261,7 @@ const Dashboard = () => {
                           <div className="text-3xl md:text-4xl font-black mt-1">
                             {Math.round(quizResult.score * 100)}%
                           </div>
-                          <p className="text-xs text-indigo-150 mt-1">
+                          <p className="text-xs text-indigo-155 text-indigo-150 mt-1">
                             Score: <strong>{quizResult.correct_count}</strong> / {quizResult.questions_count} correct
                           </p>
                           <button
@@ -1560,6 +1650,131 @@ const Dashboard = () => {
         </section>
 
       </div>
+      ) : (
+        /* VIEW 2: My Progress (Analytics Dashboard) */
+        <div className="flex-grow mx-auto max-w-7xl w-full px-4 py-8 sm:px-6 lg:px-8 space-y-8 overflow-y-auto">
+          
+          <div className="flex justify-between items-center pb-4 border-b border-gray-200">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-950">My Learning Progress</h1>
+              <p className="text-xs text-gray-500">Real-time weak topic aggregation and AI-guided study recommendations.</p>
+            </div>
+            <button
+              onClick={fetchAnalytics}
+              disabled={loadingAnalytics}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-gray-50 transition"
+            >
+              {loadingAnalytics ? 'Loading...' : '↻ Refresh Analytics'}
+            </button>
+          </div>
+
+          {analyticsError && (
+            <div className="rounded-md bg-red-50 p-4 text-sm text-red-700 border border-red-200">
+              {analyticsError}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            {/* Left Panel: Weak Topics List (7 Cols) */}
+            <div className="lg:col-span-7 bg-white rounded-2xl p-6 shadow-md border border-gray-100">
+              <h2 className="text-lg font-bold text-gray-900 mb-4">Topic Accuracy Breakdown</h2>
+              
+              {loadingAnalytics && weakTopics.length === 0 ? (
+                <div className="text-center py-12 text-sm text-gray-500">Loading topic analytics...</div>
+              ) : weakTopics.length === 0 ? (
+                <div className="text-center py-12 text-sm text-gray-500 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/20">
+                  No topic performance data available yet. 
+                  <p className="text-2xs text-gray-400 mt-2">
+                    Tip: Complete quizzes with at least 3 questions per topic to populate analysis reports!
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  {weakTopics.map((wt, idx) => {
+                    const isWeak = wt.accuracy_percentage < 50;
+                    const isAverage = wt.accuracy_percentage >= 50 && wt.accuracy_percentage < 75;
+                    const colorClass = isWeak
+                      ? 'bg-red-500'
+                      : isAverage
+                      ? 'bg-yellow-500'
+                      : 'bg-green-500';
+
+                    return (
+                      <div key={idx} className="space-y-2">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="font-semibold text-gray-800">{wt.topic}</span>
+                          <span className="text-gray-500 font-medium">
+                            {wt.correct_count} / {wt.total_attempted} answers correct ({wt.accuracy_percentage}%)
+                          </span>
+                        </div>
+                        {/* Progress bar visual */}
+                        <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                          <div
+                            className={`h-2.5 rounded-full ${colorClass} transition-all`}
+                            style={{ width: `${wt.accuracy_percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Right Panel: Recommendations (5 Cols) */}
+            <div className="lg:col-span-5 bg-white rounded-2xl p-6 shadow-md border border-gray-100 flex flex-col justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 mb-4">What to Revise Next</h2>
+                
+                {loadingAnalytics && recommendations.length === 0 ? (
+                  <div className="text-center py-12 text-sm text-gray-500">Loading recommendations...</div>
+                ) : recommendations.length === 0 ? (
+                  <div className="text-center py-12 text-sm text-gray-500 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/20">
+                    No active study recommendations.
+                    <p className="text-2xs text-gray-400 mt-2">
+                      Complete quiz tests to flag weak concepts and get targeted slide guides.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {recommendations.map((rec, idx) => (
+                      <div key={idx} className="bg-indigo-50/40 p-4 rounded-xl border border-indigo-100 flex flex-col justify-between gap-3">
+                        <div>
+                          <span className="inline-flex px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-3xs font-bold uppercase tracking-wider">
+                            Topic: {rec.topic}
+                          </span>
+                          <p className="text-xs text-gray-700 font-semibold mt-2">
+                            {rec.reason}
+                          </p>
+                        </div>
+                        <div className="flex justify-between items-center border-t border-indigo-100/50 pt-2.5 mt-1">
+                          <span className="text-3xs text-gray-400 truncate max-w-[150px]">
+                            File: {rec.document_filename}
+                          </span>
+                          <button
+                            onClick={() => handleRecommendationClick(rec.document_id)}
+                            className="text-3xs font-black text-indigo-650 hover:text-indigo-850 hover:underline uppercase tracking-wider"
+                          >
+                            Open Slides ↗
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              <div className="mt-6 bg-gray-50 p-4 rounded-xl border border-gray-150 border-gray-200 text-3xs text-gray-400 leading-normal">
+                * Note: Topics are calculated strictly from your graded quiz attempt history. 
+                Topics with fewer than 3 total question attempts are ignored to ensure accurate tracking.
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      )}
     </div>
   );
 };
