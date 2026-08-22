@@ -1,95 +1,134 @@
 import React, { useContext, useState, useEffect, useRef } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import apiClient from '../api/client';
+import AppNavbar from '../components/AppNavbar';
+import {
+  Spinner,
+  LoadingPane,
+  ErrorBanner,
+  SuccessBanner,
+  EmptyState,
+  ScoreBadge,
+} from '../components/ui';
 
-const Dashboard = () => {
-  const { user, logout } = useContext(AuthContext);
+/* ─── helpers ─────────────────────────────────────────────── */
+function PanelTab({ id, label, active, onClick }) {
+  return (
+    <button
+      onClick={() => onClick(id)}
+      className={`panel-tab ${active ? 'panel-tab-active' : 'panel-tab-inactive'}`}
+    >
+      {label}
+    </button>
+  );
+}
 
-  // View state: 'workspace' | 'analytics'
+function QuizLoadingPane({ label }) {
+  return (
+    <div className="flex-grow flex flex-col items-center justify-center p-10 text-center">
+      <Spinner size="lg" />
+      <p className="mt-4 text-sm font-semibold text-gray-700">{label}</p>
+      <p className="text-xs text-gray-400 mt-1">This takes 5–15 seconds.</p>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════ */
+export default function Dashboard() {
+  const { user } = useContext(AuthContext);
+
+  /* view: 'workspace' | 'analytics' | 'settings' */
   const [currentView, setCurrentView] = useState('workspace');
 
-  // Documents listing & selection
-  const [documents, setDocuments] = useState([]);
+  /* ── document state ── */
+  const [documents, setDocuments]     = useState([]);
   const [selectedDocId, setSelectedDocId] = useState(null);
   const [loadingList, setLoadingList] = useState(false);
-  
-  // Upload state
-  const [file, setFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
+
+  /* ── upload state ── */
+  const [file, setFile]               = useState(null);
+  const [uploading, setUploading]     = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
 
-  // Right Panel tab selection: 'chat' | 'notes' | 'flashcards' | 'mcqs' | 'short_answer'
+  /* ── inner tab ── */
   const [activeTab, setActiveTab] = useState('chat');
 
-  // Q&A Chat states
+  /* ── chat ── */
   const [chatHistory, setChatHistory] = useState([]);
-  const [question, setQuestion] = useState('');
-  const [asking, setAsking] = useState(false);
+  const [question, setQuestion]       = useState('');
+  const [asking, setAsking]           = useState(false);
   const chatEndRef = useRef(null);
 
-  // Study Notes states
-  const [sessionNotes, setSessionNotes] = useState({}); // docId -> notesData
-  const [notesLoading, setNotesLoading] = useState(false);
-  const [notesError, setNotesError] = useState('');
-  const [expandedSections, setExpandedSections] = useState({}); // sectionIndex -> bool
+  /* ── notes ── */
+  const [sessionNotes, setSessionNotes]       = useState({});
+  const [notesLoading, setNotesLoading]       = useState(false);
+  const [notesError, setNotesError]           = useState('');
+  const [expandedSections, setExpandedSections] = useState({});
 
-  // Flashcards states
-  const [sessionFlashcards, setSessionFlashcards] = useState({}); // docId -> flashcardsList
+  /* ── flashcards ── */
+  const [sessionFlashcards, setSessionFlashcards] = useState({});
   const [flashcardsLoading, setFlashcardsLoading] = useState(false);
-  const [flashcardsError, setFlashcardsError] = useState('');
-  const [currentCardIndex, setCurrentCardIndex] = useState(0);
-  const [flipped, setFlipped] = useState(false);
-  const [topicFilter, setTopicFilter] = useState('All');
+  const [flashcardsError, setFlashcardsError]     = useState('');
+  const [currentCardIndex, setCurrentCardIndex]   = useState(0);
+  const [flipped, setFlipped]                     = useState(false);
+  const [topicFilter, setTopicFilter]             = useState('All');
 
-  // MCQ states
-  const [sessionMCQs, setSessionMCQs] = useState({}); // docId -> { quiz_id, questions: [] }
-  const [mcqsLoading, setMcqsLoading] = useState(false);
-  const [mcqsError, setMcqsError] = useState('');
+  /* ── MCQ ── */
+  const [sessionMCQs, setSessionMCQs]   = useState({});
+  const [mcqsLoading, setMcqsLoading]   = useState(false);
+  const [mcqsError, setMcqsError]       = useState('');
   const [currentMcqIndex, setCurrentMcqIndex] = useState(0);
-  const [mcqAnswers, setMcqAnswers] = useState({}); // questionId -> optionIndex (0-3)
-  const [quizResult, setQuizResult] = useState(null);
+  const [mcqAnswers, setMcqAnswers]     = useState({});
+  const [quizResult, setQuizResult]     = useState(null);
   const [submittingQuiz, setSubmittingQuiz] = useState(false);
 
-  // Short Answer states
-  const [sessionShortAnswers, setSessionShortAnswers] = useState({}); // docId -> { quiz_id, questions: [] }
-  const [saLoading, setSaLoading] = useState(false);
-  const [saError, setSaError] = useState('');
+  /* ── Short Answer ── */
+  const [sessionSA, setSessionSA]       = useState({});
+  const [saLoading, setSaLoading]       = useState(false);
+  const [saError, setSaError]           = useState('');
   const [currentSaIndex, setCurrentSaIndex] = useState(0);
-  const [saAnswers, setSaAnswers] = useState({}); // questionId -> studentText
-  const [saQuizResult, setSaQuizResult] = useState(null);
-  const [submittingSaQuiz, setSubmittingSaQuiz] = useState(false);
+  const [saAnswers, setSaAnswers]       = useState({});
+  const [saResult, setSaResult]         = useState(null);
+  const [submittingSa, setSubmittingSa] = useState(false);
 
-  // Quiz Performance History states
-  const [historyList, setHistoryList] = useState([]);
+  /* ── quiz history ── */
+  const [historyList, setHistoryList]     = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // Analytics states
-  const [weakTopics, setWeakTopics] = useState([]);
+  /* ── analytics ── */
+  const [weakTopics, setWeakTopics]         = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
-  const [analyticsError, setAnalyticsError] = useState('');
+  const [analyticsError, setAnalyticsError]     = useState('');
 
-  // 1. Fetch documents list and history on mount
+  /* ── settings / persona ── */
+  const [personaMode, setPersonaMode]         = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving]   = useState(false);
+  const [settingsError, setSettingsError]     = useState('');
+  const [settingsSaved, setSettingsSaved]     = useState(false);
+
+  /* ─── data loaders ──────────────────────────────────────── */
   const fetchDocuments = async () => {
     setLoadingList(true);
     try {
-      const response = await apiClient.get('/documents');
-      setDocuments(response.data);
+      const res = await apiClient.get('/documents');
+      setDocuments(res.data);
     } catch (err) {
-      console.error('Failed to fetch documents', err);
+      console.error(err);
     } finally {
       setLoadingList(false);
     }
   };
 
-  const fetchQuizHistory = async () => {
+  const fetchHistory = async () => {
     setLoadingHistory(true);
     try {
-      const response = await apiClient.get('/quizzes/history');
-      setHistoryList(response.data);
+      const res = await apiClient.get('/quizzes/history');
+      setHistoryList(res.data);
     } catch (err) {
-      console.error('Failed to fetch quiz history', err);
+      console.error(err);
     } finally {
       setLoadingHistory(false);
     }
@@ -106,60 +145,57 @@ const Dashboard = () => {
       setWeakTopics(topicsRes.data.weak_topics || []);
       setRecommendations(recsRes.data.recommendations || []);
     } catch (err) {
-      console.error('Failed to fetch analytics', err);
-      setAnalyticsError(
-        err.response?.data?.detail || 'Failed to load progress analytics. Please try again.'
-      );
+      setAnalyticsError(err.response?.data?.detail || 'Failed to load analytics.');
     } finally {
       setLoadingAnalytics(false);
     }
   };
 
+  const fetchSettings = async () => {
+    setSettingsLoading(true);
+    setSettingsError('');
+    try {
+      const res = await apiClient.get('/users/me/settings');
+      setPersonaMode(res.data.persona_mode);
+    } catch (err) {
+      setSettingsError('Failed to load settings.');
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  /* ─── mount ─────────────────────────────────────────────── */
   useEffect(() => {
     fetchDocuments();
-    fetchQuizHistory();
+    fetchHistory();
+    fetchSettings();
   }, []);
 
-  // Fetch analytics when view changes to My Progress
+  /* fetch analytics when entering My Progress */
   useEffect(() => {
-    if (currentView === 'analytics') {
-      fetchAnalytics();
-    }
+    if (currentView === 'analytics') fetchAnalytics();
   }, [currentView]);
 
-  // 2. Poll status for pending documents
-  const pendingIds = documents
-    .filter((doc) => doc.status === 'pending')
-    .map((doc) => doc.id);
-
+  /* ─── pending document polling ──────────────────────────── */
+  const pendingIds = documents.filter((d) => d.status === 'pending').map((d) => d.id);
   useEffect(() => {
-    if (pendingIds.length === 0) return;
-
-    const intervals = pendingIds.map((id) => {
-      return setInterval(async () => {
+    if (!pendingIds.length) return;
+    const timers = pendingIds.map((id) =>
+      setInterval(async () => {
         try {
-          const response = await apiClient.get(`/documents/${id}/status`);
-          const updatedDoc = response.data;
-          
-          if (updatedDoc.status !== 'pending') {
-            setDocuments((prevDocs) =>
-              prevDocs.map((doc) =>
-                doc.id === id ? { ...doc, status: updatedDoc.status } : doc
-              )
+          const res = await apiClient.get(`/documents/${id}/status`);
+          if (res.data.status !== 'pending') {
+            setDocuments((prev) =>
+              prev.map((d) => (d.id === id ? { ...d, status: res.data.status } : d))
             );
           }
-        } catch (err) {
-          console.error(`Failed to poll status for document ${id}`, err);
-        }
-      }, 3000);
-    });
-
-    return () => {
-      intervals.forEach((intervalId) => clearInterval(intervalId));
-    };
+        } catch {}
+      }, 3000)
+    );
+    return () => timers.forEach(clearInterval);
   }, [pendingIds.join(',')]);
 
-  // 3. Clear Right Panel states when selection changes
+  /* ─── clear panel on doc change ─────────────────────────── */
   useEffect(() => {
     setChatHistory([]);
     setQuestion('');
@@ -175,18 +211,18 @@ const Dashboard = () => {
     setMcqAnswers({});
     setSaAnswers({});
     setQuizResult(null);
-    setSaQuizResult(null);
-    setActiveTab('chat'); // default to chat on document change
+    setSaResult(null);
+    setActiveTab('chat');
   }, [selectedDocId]);
 
-  // Scroll to bottom of chat history on updates
+  /* scroll chat to bottom */
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, asking]);
 
-  // 4. Handle File selection and upload
+  /* ─── handlers ──────────────────────────────────────────── */
   const handleFileChange = (e) => {
-    if (e.target.files && e.target.files.length > 0) {
+    if (e.target.files?.[0]) {
       setFile(e.target.files[0]);
       setUploadError('');
       setUploadSuccess('');
@@ -195,501 +231,299 @@ const Dashboard = () => {
 
   const handleUploadSubmit = async (e) => {
     e.preventDefault();
-    if (!file) {
-      setUploadError('Please select a file to upload first.');
-      return;
-    }
-
+    if (!file) return setUploadError('Please select a file first.');
     setUploading(true);
     setUploadError('');
     setUploadSuccess('');
-
-    const formData = new FormData();
-    formData.append('file', file);
-
+    const fd = new FormData();
+    fd.append('file', file);
     try {
-      await apiClient.post('/documents/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+      await apiClient.post('/documents/upload', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
-
-      setUploadSuccess(`Successfully uploaded '${file.name}'!`);
+      setUploadSuccess(`"${file.name}" uploaded successfully!`);
       setFile(null);
       e.target.reset();
-
-      const refreshResponse = await apiClient.get('/documents');
-      setDocuments(refreshResponse.data);
+      const res = await apiClient.get('/documents');
+      setDocuments(res.data);
     } catch (err) {
-      console.error(err);
-      setUploadError(
-        err.response?.data?.detail || 'Failed to upload document. Please try again.'
-      );
+      setUploadError(err.response?.data?.detail || 'Upload failed. Please try again.');
     } finally {
       setUploading(false);
     }
   };
 
-  // 5. Handle Chat Question submission
   const handleAskSubmit = async (e) => {
     e.preventDefault();
     if (!question.trim() || !selectedDocId) return;
-
-    const currentQuestion = question.trim();
+    const q = question.trim();
     setQuestion('');
     setAsking(true);
-
-    const messageIndex = chatHistory.length;
-    setChatHistory((prev) => [
-      ...prev,
-      { question: currentQuestion, answer: null, error: null, loading: true },
-    ]);
-
+    const idx = chatHistory.length;
+    setChatHistory((prev) => [...prev, { question: q, answer: null, error: null, loading: true }]);
     try {
-      const response = await apiClient.post('/qa/ask', {
-        document_id: selectedDocId,
-        question: currentQuestion,
-      });
-
+      const res = await apiClient.post('/qa/ask', { document_id: selectedDocId, question: q });
       setChatHistory((prev) =>
-        prev.map((msg, idx) =>
-          idx === messageIndex ? { ...msg, answer: response.data.answer, loading: false } : msg
-        )
+        prev.map((m, i) => (i === idx ? { ...m, answer: res.data.answer, loading: false } : m))
       );
     } catch (err) {
-      console.error(err);
-      const errMsg =
+      const msg =
         err.response?.data?.error ||
         err.response?.data?.detail ||
-        'Failed to get response. Please check your connection or try again.';
-
+        'Network error — please try again.';
       setChatHistory((prev) =>
-        prev.map((msg, idx) =>
-          idx === messageIndex ? { ...msg, error: errMsg, loading: false } : msg
-        )
+        prev.map((m, i) => (i === idx ? { ...m, error: msg, loading: false } : m))
       );
     } finally {
       setAsking(false);
     }
   };
 
-  // 6. Handle Notes Generation & Caching
-  const triggerNotesGeneration = async (force = false) => {
-    if (!selectedDocId) return;
+  const triggerNotes = async (force = false) => {
     setNotesLoading(true);
     setNotesError('');
-
     try {
-      const response = await apiClient.post('/notes/generate', {
+      const res = await apiClient.post('/notes/generate', {
         document_id: selectedDocId,
         force_regenerate: force,
       });
-
-      const notesData = response.data;
-      
-      setSessionNotes((prev) => ({
-        ...prev,
-        [selectedDocId]: notesData,
-      }));
-
-      const initialExpand = {};
-      if (notesData.sections) {
-        notesData.sections.forEach((_, idx) => {
-          initialExpand[idx] = idx === 0;
-        });
-      }
-      setExpandedSections(initialExpand);
+      setSessionNotes((prev) => ({ ...prev, [selectedDocId]: res.data }));
+      const init = {};
+      res.data.sections?.forEach((_, i) => { init[i] = i === 0; });
+      setExpandedSections(init);
     } catch (err) {
-      console.error(err);
-      setNotesError(
-        err.response?.data?.detail || 'Failed to generate study notes. Please retry.'
-      );
+      setNotesError(err.response?.data?.detail || 'Failed to generate notes.');
     } finally {
       setNotesLoading(false);
     }
   };
 
-  // 7. Handle Flashcards Generation & Caching
-  const triggerFlashcardsGeneration = async (force = false) => {
-    if (!selectedDocId) return;
+  const triggerFlashcards = async (force = false) => {
     setFlashcardsLoading(true);
     setFlashcardsError('');
     setCurrentCardIndex(0);
     setFlipped(false);
     setTopicFilter('All');
-
     try {
-      const response = await apiClient.post('/flashcards/generate', {
+      const res = await apiClient.post('/flashcards/generate', {
         document_id: selectedDocId,
         force_regenerate: force,
       });
-
-      const cardsList = response.data.flashcards;
-
-      setSessionFlashcards((prev) => ({
-        ...prev,
-        [selectedDocId]: cardsList,
-      }));
+      setSessionFlashcards((prev) => ({ ...prev, [selectedDocId]: res.data.flashcards }));
     } catch (err) {
-      console.error(err);
-      setFlashcardsError(
-        err.response?.data?.detail || 'Failed to generate flashcards. Please try again.'
-      );
+      setFlashcardsError(err.response?.data?.detail || 'Failed to generate flashcards.');
     } finally {
       setFlashcardsLoading(false);
     }
   };
 
-  // 8. Handle MCQ Generation & Quiz Submission
-  const triggerMCQGeneration = async (force = false) => {
-    if (!selectedDocId) return;
+  const triggerMCQs = async (force = false) => {
     setMcqsLoading(true);
     setMcqsError('');
     setCurrentMcqIndex(0);
     setMcqAnswers({});
     setQuizResult(null);
-
     try {
-      const response = await apiClient.post('/mcqs/generate', {
+      const res = await apiClient.post('/mcqs/generate', {
         document_id: selectedDocId,
         force_regenerate: force,
       });
-
       setSessionMCQs((prev) => ({
         ...prev,
-        [selectedDocId]: {
-          quiz_id: response.data.quiz_id,
-          questions: response.data.questions,
-        },
+        [selectedDocId]: { quiz_id: res.data.quiz_id, questions: res.data.questions },
       }));
     } catch (err) {
-      console.error(err);
-      setMcqsError(
-        err.response?.data?.detail || 'Failed to generate MCQ practice quiz. Please retry.'
-      );
+      setMcqsError(err.response?.data?.detail || 'Failed to generate MCQ quiz.');
     } finally {
       setMcqsLoading(false);
     }
   };
 
-  const handleQuizSubmit = async () => {
-    const activeQuiz = sessionMCQs[selectedDocId];
-    if (!selectedDocId || !activeQuiz) return;
-
+  const handleMcqSubmit = async () => {
+    const quiz = sessionMCQs[selectedDocId];
+    if (!quiz) return;
     setSubmittingQuiz(true);
     setMcqsError('');
-
-    const formattedAnswers = activeQuiz.questions.map((q) => {
-      const selection = mcqAnswers[q.id];
-      return {
-        question_id: q.id,
-        student_answer: selection !== undefined ? String(selection) : '',
-      };
-    });
-
     try {
-      const response = await apiClient.post(`/quizzes/${activeQuiz.quiz_id}/submit`, {
-        answers: formattedAnswers,
+      const res = await apiClient.post(`/quizzes/${quiz.quiz_id}/submit`, {
+        answers: quiz.questions.map((q) => ({
+          question_id: q.id,
+          student_answer: mcqAnswers[q.id] !== undefined ? String(mcqAnswers[q.id]) : '',
+        })),
       });
-      setQuizResult(response.data);
-      // Refresh history list and analytics immediately
-      fetchQuizHistory();
+      setQuizResult(res.data);
+      fetchHistory();
       fetchAnalytics();
     } catch (err) {
-      console.error(err);
-      setMcqsError(
-        err.response?.data?.detail || 'Failed to submit quiz results. Please try again.'
-      );
+      setMcqsError(err.response?.data?.detail || 'Failed to submit quiz.');
     } finally {
       setSubmittingQuiz(false);
     }
   };
 
-  // 9. Handle Short-Answer Quiz Generation & Submission
-  const triggerSAGeneration = async (force = false) => {
-    if (!selectedDocId) return;
+  const triggerSA = async (force = false) => {
     setSaLoading(true);
     setSaError('');
     setCurrentSaIndex(0);
     setSaAnswers({});
-    setSaQuizResult(null);
-
+    setSaResult(null);
     try {
-      const response = await apiClient.post('/short-answer/generate', {
+      const res = await apiClient.post('/short-answer/generate', {
         document_id: selectedDocId,
         force_regenerate: force,
       });
-
-      setSessionShortAnswers((prev) => ({
+      setSessionSA((prev) => ({
         ...prev,
-        [selectedDocId]: {
-          quiz_id: response.data.quiz_id,
-          questions: response.data.questions,
-        },
+        [selectedDocId]: { quiz_id: res.data.quiz_id, questions: res.data.questions },
       }));
     } catch (err) {
-      console.error(err);
-      setSaError(
-        err.response?.data?.detail || 'Failed to generate Short-Answer practice quiz. Please retry.'
-      );
+      setSaError(err.response?.data?.detail || 'Failed to generate short-answer quiz.');
     } finally {
       setSaLoading(false);
     }
   };
 
-  const handleSaQuizSubmit = async () => {
-    const activeSaQuiz = sessionShortAnswers[selectedDocId];
-    if (!selectedDocId || !activeSaQuiz) return;
-
-    setSubmittingSaQuiz(true);
+  const handleSaSubmit = async () => {
+    const quiz = sessionSA[selectedDocId];
+    if (!quiz) return;
+    setSubmittingSa(true);
     setSaError('');
-
-    const formattedAnswers = activeSaQuiz.questions.map((q) => {
-      const textVal = saAnswers[q.id] || '';
-      return {
-        question_id: q.id,
-        student_answer: textVal.trim(),
-      };
-    });
-
     try {
-      const response = await apiClient.post(`/quizzes/${activeSaQuiz.quiz_id}/submit`, {
-        answers: formattedAnswers,
+      const res = await apiClient.post(`/quizzes/${quiz.quiz_id}/submit`, {
+        answers: quiz.questions.map((q) => ({
+          question_id: q.id,
+          student_answer: (saAnswers[q.id] || '').trim(),
+        })),
       });
-      setSaQuizResult(response.data);
-      // Refresh history list and analytics immediately
-      fetchQuizHistory();
+      setSaResult(res.data);
+      fetchHistory();
       fetchAnalytics();
     } catch (err) {
-      console.error(err);
-      setSaError(
-        err.response?.data?.detail || 'Failed to submit quiz results. Please try again.'
-      );
+      setSaError(err.response?.data?.detail || 'Failed to submit quiz.');
     } finally {
-      setSubmittingSaQuiz(false);
+      setSubmittingSa(false);
     }
   };
 
-  const handleSaTextChange = (questionId, value) => {
-    setSaAnswers((prev) => ({ ...prev, [questionId]: value }));
+  const handlePersonaToggle = async () => {
+    const newVal = !personaMode;
+    setSettingsSaving(true);
+    setSettingsError('');
+    setSettingsSaved(false);
+    try {
+      const res = await apiClient.patch('/users/me/settings', { persona_mode: newVal });
+      setPersonaMode(res.data.persona_mode);
+      setSettingsSaved(true);
+      setTimeout(() => setSettingsSaved(false), 3000);
+    } catch (err) {
+      setSettingsError(err.response?.data?.detail || 'Failed to save setting.');
+    } finally {
+      setSettingsSaving(false);
+    }
   };
 
   const handleRecommendationClick = (docId) => {
     if (docId && docId !== 'unknown') {
       setSelectedDocId(docId);
       setCurrentView('workspace');
-      setActiveTab('notes'); // Open study notes instantly for revision
+      setActiveTab('notes');
     }
   };
 
-  // Caching getters
-  const currentNotes = sessionNotes[selectedDocId];
-  const allFlashcards = sessionFlashcards[selectedDocId] || [];
-  const activeQuiz = sessionMCQs[selectedDocId];
-  const activeSaQuiz = sessionShortAnswers[selectedDocId];
-
-  // Filter flashcards by topic dropdown
-  const uniqueTopics = ['All', ...new Set(allFlashcards.map((c) => c.topic))];
-  const filteredFlashcards = topicFilter === 'All'
-    ? allFlashcards
-    : allFlashcards.filter((c) => c.topic === topicFilter);
-
-  const displayCard = filteredFlashcards[currentCardIndex];
-
-  const handleTopicFilterChange = (e) => {
-    setTopicFilter(e.target.value);
-    setCurrentCardIndex(0);
-    setFlipped(false);
-  };
-
-  const nextCard = () => {
-    setFlipped(false);
-    setCurrentCardIndex((prev) => Math.min(prev + 1, filteredFlashcards.length - 1));
-  };
-
-  const prevCard = () => {
-    setFlipped(false);
-    setCurrentCardIndex((prev) => Math.max(prev - 1, 0));
-  };
-
-  const toggleSection = (index) => {
-    setExpandedSections((prev) => ({
-      ...prev,
-      [index]: !prev[index],
-    }));
-  };
-
+  /* ─── computed values ───────────────────────────────────── */
+  const currentNotes  = sessionNotes[selectedDocId];
+  const allCards      = sessionFlashcards[selectedDocId] || [];
+  const activeMcqQuiz = sessionMCQs[selectedDocId];
+  const activeSaQuiz  = sessionSA[selectedDocId];
   const selectedDocName = documents.find((d) => d.id === selectedDocId)?.filename;
 
+  const uniqueTopics = ['All', ...new Set(allCards.map((c) => c.topic))];
+  const filteredCards =
+    topicFilter === 'All' ? allCards : allCards.filter((c) => c.topic === topicFilter);
+  const displayCard = filteredCards[currentCardIndex];
+
+  /* ─────────────────────────── RENDER ───────────────────── */
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Navbar */}
-      <nav className="bg-white shadow-sm flex-shrink-0">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 justify-between items-center">
-            <div className="flex items-center space-x-6">
-              <span className="text-xl font-bold text-indigo-650 bg-gradient-to-r from-indigo-600 to-indigo-800 bg-clip-text text-transparent">
-                AI Study Companion
-              </span>
-              <div className="hidden sm:flex space-x-2">
-                <button
-                  onClick={() => setCurrentView('workspace')}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition ${
-                    currentView === 'workspace'
-                      ? 'bg-indigo-50 text-indigo-700'
-                      : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-                  }`}
-                >
-                  Workspace
-                </button>
-                <button
-                  onClick={() => setCurrentView('analytics')}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition ${
-                    currentView === 'analytics'
-                      ? 'bg-indigo-50 text-indigo-700'
-                      : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-                  }`}
-                >
-                  My Progress
-                </button>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4">
-              {/* Mobile View Toggle Buttons */}
-              <div className="flex sm:hidden space-x-1">
-                <button
-                  onClick={() => setCurrentView('workspace')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-bold ${
-                    currentView === 'workspace' ? 'bg-indigo-550 bg-indigo-600 text-white' : 'text-gray-500'
-                  }`}
-                >
-                  Study
-                </button>
-                <button
-                  onClick={() => setCurrentView('analytics')}
-                  className={`px-2.5 py-1 rounded-md text-xs font-bold ${
-                    currentView === 'analytics' ? 'bg-indigo-550 bg-indigo-600 text-white' : 'text-gray-500'
-                  }`}
-                >
-                  Progress
-                </button>
-              </div>
+      <AppNavbar
+        currentView={currentView}
+        onViewChange={setCurrentView}
+        personaMode={personaMode}
+      />
 
-              <span className="text-sm text-gray-705 text-gray-700 hidden md:inline">
-                Welcome, <strong>{user?.name || 'Student'}</strong>!
-              </span>
-              <button
-                onClick={logout}
-                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs sm:text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition"
-              >
-                Sign out
-              </button>
-            </div>
-          </div>
-        </div>
-      </nav>
+      {/* ═══ WORKSPACE VIEW ═══════════════════════════════ */}
+      {currentView === 'workspace' && (
+        <div className="flex-grow mx-auto max-w-7xl w-full px-4 py-8 sm:px-6 lg:px-8 space-y-8">
 
-      {/* Main Container */}
-      {currentView === 'workspace' ? (
-        /* VIEW 1: Study Workspace Grid (Original upload/documents/tabs view) */
-        <div className="flex-grow mx-auto max-w-7xl w-full px-4 py-8 sm:px-6 lg:px-8 space-y-8 overflow-y-auto">
-          
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* Left Column (Upload + List) - 5 Cols */}
+
+            {/* ── Left column: upload + document list ── */}
             <div className="lg:col-span-5 space-y-6 flex flex-col">
-              {/* SECTION 1: Document Upload */}
-              <section className="bg-white rounded-2xl p-6 shadow-md border border-gray-100 flex-shrink-0">
-                <h2 className="text-lg font-bold text-gray-900 mb-4">Upload Study Material</h2>
-                
-                {uploadSuccess && (
-                  <div className="mb-4 rounded-md bg-green-50 p-4 text-sm text-green-700 border border-green-200">
-                    {uploadSuccess}
-                  </div>
-                )}
 
-                {uploadError && (
-                  <div className="mb-4 rounded-md bg-red-50 p-4 text-sm text-red-700 border border-red-200">
-                    {uploadError}
-                  </div>
-                )}
-
-                <form onSubmit={handleUploadSubmit} className="space-y-4">
-                  <div className="flex flex-col gap-3">
-                    <input
-                      type="file"
-                      accept=".pdf,.pptx,.ppt"
-                      onChange={handleFileChange}
-                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
-                    />
-                    <button
-                      type="submit"
-                      disabled={uploading || !file}
-                      className="inline-flex justify-center items-center w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-sm"
-                    >
-                      {uploading ? 'Uploading...' : 'Upload File'}
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500 text-center">
-                    Supported: PDF, PPTX, PPT (Max 20MB)
-                  </p>
+              {/* Upload */}
+              <section className="card flex-shrink-0">
+                <h2 className="section-title mb-4">Upload Study Material</h2>
+                <SuccessBanner message={uploadSuccess} className="mb-4" />
+                <ErrorBanner  message={uploadError}   className="mb-4" />
+                <form onSubmit={handleUploadSubmit} className="space-y-3">
+                  <input
+                    type="file"
+                    accept=".pdf,.pptx,.ppt"
+                    onChange={handleFileChange}
+                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
+                  />
+                  <button
+                    type="submit"
+                    disabled={uploading || !file}
+                    className="btn-primary w-full"
+                  >
+                    {uploading ? <><Spinner size="sm" className="mr-2" />Uploading…</> : 'Upload File'}
+                  </button>
+                  <p className="text-xs text-gray-400 text-center">PDF, PPTX, PPT · max 20 MB</p>
                 </form>
               </section>
 
-              {/* SECTION 2: Document List */}
-              <section className="bg-white rounded-2xl p-6 shadow-md border border-gray-100 flex-grow flex flex-col min-h-[300px]">
+              {/* Document list */}
+              <section className="card flex-grow flex flex-col min-h-[280px]">
                 <div className="flex justify-between items-center mb-4 flex-shrink-0">
-                  <h2 className="text-lg font-bold text-gray-900">Your Documents</h2>
-                  <button
-                    onClick={fetchDocuments}
-                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-850"
-                  >
-                    Refresh List
+                  <h2 className="section-title">Your Documents</h2>
+                  <button onClick={fetchDocuments} className="btn-ghost text-xs text-indigo-600">
+                    ↻ Refresh
                   </button>
                 </div>
 
-                <div className="flex-grow overflow-y-auto max-h-[350px]">
-                  {loadingList && documents.length === 0 ? (
-                    <div className="text-center py-8 text-sm text-gray-500">Loading documents...</div>
-                  ) : documents.length === 0 ? (
-                    <div className="text-center py-12 text-sm text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
-                      No documents uploaded yet.
-                    </div>
+                <div className="flex-grow overflow-y-auto max-h-[380px]">
+                  {loadingList && !documents.length ? (
+                    <div className="text-center py-8 text-sm text-gray-400">Loading…</div>
+                  ) : !documents.length ? (
+                    <EmptyState body="No documents uploaded yet." />
                   ) : (
-                    <ul className="space-y-3">
+                    <ul className="space-y-2.5">
                       {documents.map((doc) => {
-                        const isSelected = selectedDocId === doc.id;
-                        const isProcessed = doc.status === 'processed';
-
+                        const isSelected  = selectedDocId === doc.id;
+                        const isReady     = doc.status === 'processed';
                         return (
                           <li
                             key={doc.id}
-                            onClick={() => isProcessed && setSelectedDocId(doc.id)}
-                            className={`p-4 rounded-xl border text-left transition ${
-                              isProcessed ? 'cursor-pointer' : 'opacity-65 cursor-not-allowed'
+                            onClick={() => isReady && setSelectedDocId(doc.id)}
+                            className={`card-sm transition ${
+                              isReady ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'
                             } ${
-                              isSelected
-                                ? 'bg-indigo-50 border-indigo-300 ring-2 ring-indigo-500/20'
-                                : 'bg-white border-gray-200 hover:bg-gray-50'
+                              isSelected ? 'ring-2 ring-indigo-500 border-indigo-300 bg-indigo-50' : 'hover:bg-gray-50'
                             }`}
                           >
                             <div className="flex justify-between items-start gap-2">
-                              <div className="font-semibold text-sm text-gray-900 truncate">
-                                {doc.filename}
-                              </div>
-                              <span
-                                className={`inline-flex px-2 py-0.5 text-2xs font-semibold rounded-full uppercase ${
-                                  doc.status === 'processed'
-                                    ? 'bg-green-50 text-green-700 border border-green-200'
-                                    : doc.status === 'failed'
-                                    ? 'bg-red-50 text-red-700 border border-red-200'
-                                    : 'bg-yellow-50 text-yellow-700 border border-yellow-200 animate-pulse'
-                                }`}
-                              >
+                              <span className="font-semibold text-sm text-gray-900 truncate">{doc.filename}</span>
+                              <span className={`status-badge ${
+                                doc.status === 'processed' ? 'bg-green-50 text-green-700 border border-green-200'
+                                : doc.status === 'failed'  ? 'bg-red-50 text-red-700 border border-red-200'
+                                : 'bg-yellow-50 text-yellow-700 border border-yellow-200 animate-pulse'
+                              }`}>
                                 {doc.status}
                               </span>
                             </div>
-                            <div className="flex justify-between items-center mt-2 text-2xs text-gray-500">
-                              <span>Format: {doc.file_type}</span>
+                            <div className="flex justify-between mt-1.5 text-xs text-gray-400">
+                              <span>{doc.file_type}</span>
                               <span>{new Date(doc.created_at).toLocaleDateString()}</span>
                             </div>
                           </li>
@@ -701,1023 +535,576 @@ const Dashboard = () => {
               </section>
             </div>
 
-            {/* Right Column (Q&A / Notes / Flashcards / MCQ / Short Answer Tabs Panel) - 7 Cols */}
-            <div className="lg:col-span-7 bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden flex flex-col min-h-[450px]">
-              
-              {/* Header & Tabs */}
-              <div className="bg-gray-50 border-b border-gray-100 p-4 flex-shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      onClick={() => setActiveTab('chat')}
-                      className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
-                        activeTab === 'chat'
-                          ? 'border-indigo-600 text-indigo-700'
-                          : 'border-transparent text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      Q&amp;A Chat
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('notes')}
-                      className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
-                        activeTab === 'notes'
-                          ? 'border-indigo-600 text-indigo-700'
-                          : 'border-transparent text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      Study Notes
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('flashcards')}
-                      className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
-                        activeTab === 'flashcards'
-                          ? 'border-indigo-600 text-indigo-700'
-                          : 'border-transparent text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      Flashcards
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('mcqs')}
-                      className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
-                        activeTab === 'mcqs'
-                      ? 'border-indigo-600 text-indigo-700'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  MCQ Quiz
-                </button>
-                <button
-                  onClick={() => setActiveTab('short_answer')}
-                  className={`text-sm font-bold pb-1 border-b-2 px-1 transition ${
-                    activeTab === 'short_answer'
-                      ? 'border-indigo-600 text-indigo-700'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Short-Answer
-                </button>
-              </div>
-              {selectedDocId && (
-                <p className="text-2xs text-gray-500 mt-1 truncate max-w-sm">
-                  Active file: {selectedDocName}
-                </p>
-              )}
-            </div>
-            {selectedDocId && (
-              <button
-                onClick={() => setSelectedDocId(null)}
-                className="text-2xs font-bold text-red-600 hover:text-red-800 self-start sm:self-auto"
-              >
-                Clear Selection
-              </button>
-            )}
-          </div>
+            {/* ── Right column: feature tabs panel ── */}
+            <div className="lg:col-span-7 bg-white rounded-2xl shadow-md border border-gray-100 flex flex-col min-h-[500px] overflow-hidden">
 
-          {/* Panel Contents */}
-          {!selectedDocId ? (
-            <div className="flex-grow flex flex-col items-center justify-center p-8 text-center bg-gray-50/50">
-              <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center text-3xl mb-4 shadow-inner">
-                🎓
-              </div>
-              <h3 className="text-base font-bold text-gray-900">No Document Selected</h3>
-              <p className="text-sm text-gray-500 mt-2 max-w-sm leading-relaxed">
-                Select a processed document on the left to start asking questions, generate study notes, practice flashcards, or take MCQ/Short-Answer tests.
-              </p>
-            </div>
-          ) : activeTab === 'chat' ? (
-            /* TAB 1: Chat interface */
-            <div className="flex-grow flex flex-col justify-between overflow-hidden">
-              <div className="flex-grow p-4 overflow-y-auto space-y-4">
-                {chatHistory.length === 0 && !asking && (
-                  <div className="text-center py-12 text-slate-400 text-xs italic">
-                    Type a question below to query the selected study material...
+              {/* Panel header */}
+              <div className="bg-gray-50 border-b border-gray-200 px-4 py-3 flex-shrink-0">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  {[
+                    ['chat',         'Q&A Chat'],
+                    ['notes',        'Notes'],
+                    ['flashcards',   'Flashcards'],
+                    ['mcqs',         'MCQ Quiz'],
+                    ['short_answer', 'Short-Answer'],
+                  ].map(([id, label]) => (
+                    <PanelTab
+                      key={id}
+                      id={id}
+                      label={label}
+                      active={activeTab === id}
+                      onClick={!selectedDocId ? () => {} : setActiveTab}
+                    />
+                  ))}
+                </div>
+                {selectedDocId ? (
+                  <div className="flex items-center justify-between mt-1.5">
+                    <p className="text-xs text-gray-400 truncate">📄 {selectedDocName}</p>
+                    <button
+                      onClick={() => setSelectedDocId(null)}
+                      className="text-xs text-red-500 hover:text-red-700 font-semibold ml-2 flex-shrink-0"
+                    >
+                      ✕ Clear
+                    </button>
                   </div>
+                ) : (
+                  <p className="text-xs text-gray-400 mt-1">Select a document to activate study tools</p>
                 )}
-
-                {chatHistory.map((chat, idx) => {
-                  const isRefusal = chat.answer === "I couldn't find this in your uploaded material.";
-                  
-                  return (
-                    <div key={idx} className="space-y-2">
-                      <div className="flex justify-end">
-                        <div className="bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-md text-sm font-medium shadow-sm">
-                          {chat.question}
-                        </div>
-                      </div>
-
-                      <div className="flex justify-start">
-                        {chat.loading ? (
-                          <div className="bg-gray-100 text-gray-500 rounded-2xl rounded-tl-sm px-4 py-2.5 flex items-center space-x-2 text-sm shadow-sm">
-                            <span className="flex h-2 w-2 relative">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
-                            </span>
-                            <span>Thinking...</span>
-                          </div>
-                        ) : chat.error ? (
-                          <div className="bg-red-50 text-red-700 border border-red-150 rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-md text-sm shadow-sm">
-                            <strong className="block text-2xs uppercase tracking-wider text-red-650 font-bold mb-1">
-                              System Error
-                            </strong>
-                            {chat.error}
-                          </div>
-                        ) : (
-                          <div
-                            className={`rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-md text-sm leading-relaxed shadow-sm ${
-                              isRefusal
-                                ? 'bg-gray-50 text-gray-500 italic border border-gray-200'
-                                : 'bg-gray-100 text-gray-800'
-                            }`}
-                          >
-                            {chat.answer}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-                <div ref={chatEndRef} />
               </div>
 
-              <form onSubmit={handleAskSubmit} className="p-4 bg-gray-50 border-t border-gray-100 flex-shrink-0 flex gap-2">
-                <input
-                  type="text"
-                  required
-                  placeholder="Ask a question about the document..."
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  disabled={asking}
-                  className="flex-grow rounded-lg border border-gray-300 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-60 bg-white"
-                />
-                <button
-                  type="submit"
-                  disabled={asking || !question.trim()}
-                  className="rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-sm font-semibold hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 transition shadow-sm"
-                >
-                  Ask
-                </button>
-              </form>
-            </div>
-          ) : activeTab === 'notes' ? (
-            /* TAB 2: Notes Interface */
-            <div className="flex-grow flex flex-col overflow-hidden bg-gray-50/30">
-              
-              {!currentNotes && !notesLoading && (
-                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
-                  <h3 className="text-base font-bold text-gray-900">Notes Not Generated</h3>
-                  <p className="text-xs text-gray-500 mt-2 max-w-xs leading-relaxed">
-                    Convert this document's text into structured study notes, key terms, and summary headings.
+              {/* Panel body */}
+              {!selectedDocId ? (
+                <div className="flex-grow flex flex-col items-center justify-center p-10 text-center bg-gray-50/50">
+                  <div className="w-16 h-16 rounded-full bg-indigo-50 flex items-center justify-center text-4xl mb-4">🎓</div>
+                  <h3 className="font-bold text-gray-800">No Document Selected</h3>
+                  <p className="text-sm text-gray-500 mt-2 max-w-xs leading-relaxed">
+                    Choose a processed document from the list to start chatting, generating notes, flashcards, or quizzes.
                   </p>
-                  
-                  {notesError && (
-                    <div className="mt-4 max-w-sm rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
-                      {notesError}
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => triggerNotesGeneration(false)}
-                    className="mt-5 rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md transition"
-                  >
-                    Generate Notes
-                  </button>
                 </div>
-              )}
 
-              {notesLoading && (
-                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
-                  <svg className="animate-spin h-10 w-10 text-indigo-600 mb-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                  </svg>
-                  <h4 className="text-sm font-bold text-gray-900">Structuring Study Notes...</h4>
-                  <p className="text-2xs text-gray-500 mt-1">This takes 5-10 seconds to read and organize the source content.</p>
-                </div>
-              )}
-
-              {currentNotes && !notesLoading && (
+              ) : activeTab === 'chat' ? (
+                /* TAB: Q&A Chat */
                 <div className="flex-grow flex flex-col overflow-hidden">
-                  
-                  <div className="bg-white border-b border-gray-150 px-4 py-2 flex justify-between items-center flex-shrink-0 text-xs">
-                    <span className="font-semibold text-gray-800">
-                      Title: {currentNotes.title || 'Structured Study Notes'}
-                    </span>
-                    <button
-                      onClick={() => triggerNotesGeneration(true)}
-                      className="text-2xs text-indigo-600 hover:text-indigo-850 font-bold hover:underline"
-                    >
-                      Regenerate
-                    </button>
-                  </div>
-
-                  {notesError && (
-                    <div className="bg-red-50 text-red-700 text-2xs p-3 border-b border-red-200">
-                      ⚠️ {notesError} (Showing last cached notes)
-                    </div>
-                  )}
-
-                  <div className="flex-grow flex flex-col md:flex-row overflow-hidden">
-                    <div className="flex-grow md:w-3/5 p-4 overflow-y-auto space-y-3">
-                      {currentNotes.sections?.map((section, idx) => {
-                        const isExpanded = !!expandedSections[idx];
-                        
-                        return (
-                          <div key={idx} className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-2xs">
-                            <button
-                              onClick={() => toggleSection(idx)}
-                              className="w-full text-left px-4 py-3 bg-gray-50 hover:bg-gray-100 flex justify-between items-center transition border-b border-gray-100"
-                            >
-                              <span className="font-bold text-sm text-gray-900">{section.heading}</span>
-                              <span className="text-xs text-gray-400 font-semibold">{isExpanded ? 'Collapse ▲' : 'Expand ▼'}</span>
-                            </button>
-
-                            {isExpanded && (
-                              <ul className="p-4 space-y-2 list-disc list-inside text-xs text-gray-700 leading-relaxed bg-white">
-                                {section.points?.map((pt, pIdx) => (
-                                  <li key={pIdx} className="pl-1">
-                                    {pt}
-                                  </li>
-                                ))}
-                              </ul>
+                  <div className="flex-grow p-4 overflow-y-auto space-y-3">
+                    {!chatHistory.length && !asking && (
+                      <p className="text-center py-16 text-xs text-gray-400 italic">
+                        Ask anything about the selected document…
+                      </p>
+                    )}
+                    {chatHistory.map((msg, i) => {
+                      const isRefusal = msg.answer === "I couldn't find this in your uploaded material.";
+                      return (
+                        <div key={i} className="space-y-2">
+                          <div className="flex justify-end">
+                            <div className="bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-sm text-sm shadow-sm">
+                              {msg.question}
+                            </div>
+                          </div>
+                          <div className="flex justify-start">
+                            {msg.loading ? (
+                              <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-4 py-2.5 flex items-center gap-2 text-sm text-gray-500">
+                                <span className="relative flex h-2 w-2">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75" />
+                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500" />
+                                </span>
+                                Thinking…
+                              </div>
+                            ) : msg.error ? (
+                              <div className="alert-error rounded-2xl rounded-tl-sm max-w-sm">
+                                <strong className="block text-xs uppercase tracking-wider mb-1">Error</strong>
+                                {msg.error}
+                              </div>
+                            ) : (
+                              <div className={`rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-sm text-sm leading-relaxed shadow-sm ${
+                                isRefusal
+                                  ? 'bg-gray-50 text-gray-500 italic border border-gray-200'
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}>
+                                {msg.answer}
+                              </div>
                             )}
                           </div>
-                        );
-                      })}
-                    </div>
-
-                    <div className="md:w-2/5 bg-gray-50 border-t md:border-t-0 md:border-l border-gray-200 p-4 overflow-y-auto flex flex-col">
-                      <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Key Terms</h3>
-                      
-                      {currentNotes.key_terms?.length === 0 ? (
-                        <div className="text-center py-6 text-2xs text-gray-400 italic bg-white rounded-xl border border-gray-100">
-                          No key definitions listed.
                         </div>
-                      ) : (
-                        <ul className="space-y-3">
-                          {currentNotes.key_terms?.map((term, tIdx) => (
-                            <li key={tIdx} className="bg-white p-3 rounded-xl border border-gray-200 shadow-2xs">
-                              <div className="font-bold text-xs text-indigo-700">{term.term}</div>
-                              <div className="text-2xs text-gray-600 mt-1 leading-normal">{term.definition}</div>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
+                      );
+                    })}
+                    <div ref={chatEndRef} />
                   </div>
-
-                </div>
-              )}
-            </div>
-          ) : activeTab === 'flashcards' ? (
-            /* TAB 3: Flashcards Interface */
-            <div className="flex-grow flex flex-col overflow-hidden bg-gray-50/30">
-              {allFlashcards.length === 0 && !flashcardsLoading && (
-                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
-                  <h3 className="text-base font-bold text-gray-900">Flashcards Not Generated</h3>
-                  <p className="text-xs text-gray-500 mt-2 max-w-xs leading-relaxed">
-                    Generate active-recall flashcards with questions and answers based on this study document.
-                  </p>
-
-                  {flashcardsError && (
-                    <div className="mt-4 max-w-sm rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
-                      {flashcardsError}
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => triggerFlashcardsGeneration(false)}
-                    className="mt-5 rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md transition"
-                  >
-                    Generate Flashcards
-                  </button>
-                </div>
-              )}
-
-              {flashcardsLoading && (
-                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
-                  <svg className="animate-spin h-10 w-10 text-indigo-600 mb-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                  </svg>
-                  <h4 className="text-sm font-bold text-gray-900">Creating Flashcards...</h4>
-                  <p className="text-2xs text-gray-500 mt-1">Extracting testable concepts and questions...</p>
-                </div>
-              )}
-
-              {allFlashcards.length > 0 && !flashcardsLoading && (
-                <div className="flex-grow flex flex-col p-6 justify-between overflow-y-auto">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                    <div className="flex items-center space-x-2">
-                      <label htmlFor="topic-select" className="text-xs font-semibold text-gray-600">
-                        Topic:
-                      </label>
-                      <select
-                        id="topic-select"
-                        value={topicFilter}
-                        onChange={handleTopicFilterChange}
-                        className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
-                      >
-                        {uniqueTopics.map((topic, index) => (
-                          <option key={index} value={topic}>
-                            {topic}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <button
-                      onClick={() => triggerFlashcardsGeneration(true)}
-                      className="text-2xs text-indigo-600 hover:text-indigo-850 font-bold hover:underline self-end sm:self-auto"
-                    >
-                      Regenerate Deck
+                  <form onSubmit={handleAskSubmit} className="p-3 bg-gray-50 border-t border-gray-200 flex gap-2 flex-shrink-0">
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ask a question about the document…"
+                      value={question}
+                      onChange={(e) => setQuestion(e.target.value)}
+                      disabled={asking}
+                      className="form-input flex-grow"
+                    />
+                    <button type="submit" disabled={asking || !question.trim()} className="btn-primary px-5">
+                      Ask
                     </button>
-                  </div>
+                  </form>
+                </div>
 
-                  {flashcardsError && (
-                    <div className="mb-4 rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
-                      ⚠️ {flashcardsError} (Showing cached deck)
+              ) : activeTab === 'notes' ? (
+                /* TAB: Notes */
+                <div className="flex-grow flex flex-col overflow-hidden">
+                  {!currentNotes && !notesLoading && (
+                    <div className="flex-grow flex flex-col items-center justify-center p-10 text-center">
+                      <EmptyState
+                        title="Notes Not Generated"
+                        body="Convert this document into structured headings, bullet points, and key terms."
+                        action={
+                          <button onClick={() => triggerNotes(false)} className="btn-primary">
+                            Generate Notes
+                          </button>
+                        }
+                      />
+                      <ErrorBanner message={notesError} className="mt-4 max-w-sm" />
                     </div>
                   )}
-
-                  {filteredFlashcards.length === 0 ? (
-                    <div className="flex-grow flex items-center justify-center text-center py-12 text-slate-400 text-xs italic">
-                      No flashcards found matching the selected topic filter.
-                    </div>
-                  ) : (
-                    <div className="flex-grow flex flex-col justify-center items-center py-4 space-y-6">
-                      <div
-                        onClick={() => setFlipped(!flipped)}
-                        className={`w-full max-w-md min-h-[180px] flex flex-col justify-between p-6 rounded-2xl border cursor-pointer select-none transition-all shadow-md ${
-                          flipped
-                            ? 'bg-indigo-50 border-indigo-300 ring-4 ring-indigo-500/10'
-                            : 'bg-white border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        <div className="flex justify-between items-center text-3xs font-bold uppercase tracking-wider text-gray-400">
-                          <span>Topic: {displayCard.topic}</span>
-                          <span className={flipped ? 'text-indigo-600' : 'text-gray-400'}>
-                            {flipped ? 'Answer' : 'Question'}
-                          </span>
+                  {notesLoading && <QuizLoadingPane label="Structuring study notes…" />}
+                  {currentNotes && !notesLoading && (
+                    <div className="flex-grow flex flex-col overflow-hidden">
+                      <div className="flex justify-between items-center px-4 py-2 bg-white border-b border-gray-100 text-xs flex-shrink-0">
+                        <span className="font-semibold text-gray-700">{currentNotes.title || 'Study Notes'}</span>
+                        <button onClick={() => triggerNotes(true)} className="text-indigo-600 hover:underline font-semibold">
+                          ↺ Regenerate
+                        </button>
+                      </div>
+                      <ErrorBanner message={notesError} className="mx-4 mt-2" />
+                      <div className="flex-grow flex flex-col md:flex-row overflow-hidden">
+                        {/* Sections */}
+                        <div className="flex-grow md:w-3/5 p-4 overflow-y-auto space-y-3">
+                          {currentNotes.sections?.map((sec, i) => (
+                            <div key={i} className="rounded-xl border border-gray-200 overflow-hidden">
+                              <button
+                                onClick={() => setExpandedSections((p) => ({ ...p, [i]: !p[i] }))}
+                                className="w-full text-left px-4 py-3 bg-gray-50 hover:bg-gray-100 flex justify-between items-center text-sm font-bold text-gray-900 border-b border-gray-100 transition"
+                              >
+                                <span>{sec.heading}</span>
+                                <span className="text-xs text-gray-400 font-normal">{expandedSections[i] ? '▲' : '▼'}</span>
+                              </button>
+                              {expandedSections[i] && (
+                                <ul className="p-4 space-y-1.5 list-disc list-inside text-xs text-gray-700 leading-relaxed bg-white">
+                                  {sec.points?.map((pt, j) => <li key={j}>{pt}</li>)}
+                                </ul>
+                              )}
+                            </div>
+                          ))}
                         </div>
-
-                        <div className="my-auto py-4 text-center">
-                          {flipped ? (
-                            <div className="text-gray-800 text-sm md:text-base font-semibold leading-relaxed">
-                              {displayCard.back}
-                            </div>
+                        {/* Key terms sidebar */}
+                        <div className="md:w-2/5 bg-gray-50 border-t md:border-t-0 md:border-l border-gray-200 p-4 overflow-y-auto">
+                          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Key Terms</h3>
+                          {!currentNotes.key_terms?.length ? (
+                            <p className="text-xs text-gray-400 italic">No key terms listed.</p>
                           ) : (
-                            <div className="text-gray-900 text-sm md:text-base font-bold leading-relaxed">
-                              {displayCard.front}
-                            </div>
+                            <ul className="space-y-3">
+                              {currentNotes.key_terms.map((t, i) => (
+                                <li key={i} className="card-sm">
+                                  <div className="font-bold text-xs text-indigo-700">{t.term}</div>
+                                  <div className="text-xs text-gray-600 mt-1 leading-normal">{t.definition}</div>
+                                </li>
+                              ))}
+                            </ul>
                           )}
                         </div>
-
-                        <div className="text-center text-3xs text-slate-400 uppercase tracking-widest">
-                          {flipped ? 'Click to show question' : 'Click to flip and show answer'}
-                        </div>
-                      </div>
-
-                      <div className="text-xs font-semibold text-gray-500">
-                        Card {currentCardIndex + 1} of {filteredFlashcards.length}
-                      </div>
-
-                      <div className="flex items-center space-x-4">
-                        <button
-                          onClick={prevCard}
-                          disabled={currentCardIndex === 0}
-                          className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
-                        >
-                          ◀ Prev
-                        </button>
-                        <button
-                          onClick={nextCard}
-                          disabled={currentCardIndex === filteredFlashcards.length - 1}
-                          className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
-                        >
-                          Next ▶
-                        </button>
                       </div>
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-          ) : activeTab === 'mcqs' ? (
-            /* TAB 4: MCQ Quiz Interface */
-            <div className="flex-grow flex flex-col overflow-hidden bg-gray-50/30">
-              
-              {!activeQuiz && !mcqsLoading && (
-                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
-                  <h3 className="text-base font-bold text-gray-900">Practice Quiz Not Generated</h3>
-                  <p className="text-xs text-gray-500 mt-2 max-w-xs leading-relaxed">
-                    Test your understanding with a dynamically generated multiple-choice question quiz.
-                  </p>
 
-                  {mcqsError && (
-                    <div className="mt-4 max-w-sm rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
-                      {mcqsError}
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => triggerMCQGeneration(false)}
-                    className="mt-5 rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md transition"
-                  >
-                    Generate MCQ Quiz
-                  </button>
-                </div>
-              )}
-
-              {mcqsLoading && (
-                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
-                  <svg className="animate-spin h-10 w-10 text-indigo-600 mb-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                  </svg>
-                  <h4 className="text-sm font-bold text-gray-950 text-gray-905">Formulating Practice Quiz...</h4>
-                  <p className="text-2xs text-gray-500 mt-1">Creating custom single-answer multiple-choice questions...</p>
-                </div>
-              )}
-
-              {activeQuiz && !mcqsLoading && (
-                <div className="flex-grow flex flex-col p-6 justify-between overflow-y-auto">
-                  <div className="bg-white border rounded-xl p-3 flex justify-between items-center flex-shrink-0 text-xs shadow-2xs mb-4">
-                    <span className="font-semibold text-gray-800">
-                      Quiz Mode: Practice MCQ Test
-                    </span>
-                    <button
-                      onClick={() => triggerMCQGeneration(true)}
-                      className="text-2xs text-indigo-600 hover:text-indigo-850 font-bold hover:underline"
-                    >
-                      Regenerate Quiz
-                    </button>
-                  </div>
-
-                  {mcqsError && (
-                    <div className="mb-4 rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
-                      ⚠️ {mcqsError}
-                    </div>
-                  )}
-
-                  {!quizResult ? (
-                    <div className="flex-grow flex flex-col justify-between">
-                      {activeQuiz.questions.length === 0 ? (
-                        <div className="text-center py-12 text-gray-500 text-xs italic">
-                          No questions generated for this document.
-                        </div>
-                      ) : (
-                        <div className="space-y-6">
-                          {(() => {
-                            const q = activeQuiz.questions[currentMcqIndex];
-                            const selectedOptionIdx = mcqAnswers[q.id];
-
-                            return (
-                              <div className="space-y-4">
-                                <div className="flex justify-between items-center text-3xs font-bold uppercase tracking-wider text-gray-400">
-                                  <span>Concept: {q.topic}</span>
-                                  <span>Question {currentMcqIndex + 1} of {activeQuiz.questions.length}</span>
-                                </div>
-                                <h3 className="text-sm md:text-base font-bold text-gray-900 leading-normal">
-                                  {q.question}
-                                </h3>
-
-                                <div className="space-y-2.5 pt-2">
-                                  {q.options.map((opt, oIdx) => {
-                                    const isChosen = selectedOptionIdx === oIdx;
-                                    return (
-                                      <button
-                                        key={oIdx}
-                                        onClick={() =>
-                                          setMcqAnswers((prev) => ({ ...prev, [q.id]: oIdx }))
-                                        }
-                                        className={`w-full text-left px-4 py-3 rounded-xl border text-xs md:text-sm font-semibold transition ${
-                                          isChosen
-                                            ? 'bg-indigo-50 border-indigo-400 text-indigo-900 ring-2 ring-indigo-500/10'
-                                            : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'
-                                        }`}
-                                      >
-                                        <div className="flex items-center space-x-3">
-                                          <div
-                                            className={`h-4 w-4 rounded-full border flex items-center justify-center flex-shrink-0 ${
-                                              isChosen ? 'border-indigo-600 bg-indigo-600' : 'border-gray-300'
-                                            }`}
-                                          >
-                                            {isChosen && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
-                                          </div>
-                                          <span>{opt}</span>
-                                        </div>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })()}
-
-                          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-100">
-                            <div className="flex items-center space-x-3">
-                              <button
-                                onClick={() => setCurrentMcqIndex((prev) => Math.max(prev - 1, 0))}
-                                disabled={currentMcqIndex === 0}
-                                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
-                              >
-                                ◀ Previous
-                              </button>
-                              <button
-                                onClick={() =>
-                                  setCurrentMcqIndex((prev) =>
-                                    Math.min(prev + 1, activeQuiz.questions.length - 1)
-                                  )
-                                }
-                                disabled={currentMcqIndex === activeQuiz.questions.length - 1}
-                                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
-                              >
-                                Next ▶
-                              </button>
-                            </div>
-
-                            <button
-                              onClick={handleQuizSubmit}
-                              disabled={submittingQuiz}
-                              className="w-full sm:w-auto rounded-lg bg-indigo-600 text-white px-6 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md disabled:opacity-50 transition"
-                            >
-                              {submittingQuiz ? 'Submitting...' : 'Submit Quiz'}
-                            </button>
-                          </div>
-
-                          <p className="text-3xs text-gray-400 text-center">
-                            Note: You can submit the quiz even if some questions are left unanswered. 
-                            Unanswered questions will simply be marked incorrect.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-6">
-                      <div className="bg-indigo-600 text-white rounded-2xl p-6 text-center shadow-md relative overflow-hidden">
-                        <div className="absolute -top-12 -left-12 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
-                        <div className="relative">
-                          <h3 className="text-xs uppercase tracking-widest font-semibold text-indigo-200">
-                            Quiz Completed
-                          </h3>
-                          <div className="text-3xl md:text-4xl font-black mt-1">
-                            {Math.round(quizResult.score * 100)}%
-                          </div>
-                          <p className="text-xs text-indigo-155 text-indigo-150 mt-1">
-                            Score: <strong>{quizResult.correct_count}</strong> / {quizResult.questions_count} correct
-                          </p>
-                          <button
-                            onClick={() => triggerMCQGeneration(true)}
-                            className="mt-4 inline-flex items-center rounded-lg bg-white/20 hover:bg-white/30 text-white px-4 py-1.5 text-xs font-bold transition"
-                          >
-                            Retake New Quiz
+              ) : activeTab === 'flashcards' ? (
+                /* TAB: Flashcards */
+                <div className="flex-grow flex flex-col overflow-hidden">
+                  {!allCards.length && !flashcardsLoading && (
+                    <div className="flex-grow flex flex-col items-center justify-center p-10 text-center">
+                      <EmptyState
+                        title="Flashcards Not Generated"
+                        body="Create active-recall flip cards from this document."
+                        action={
+                          <button onClick={() => triggerFlashcards(false)} className="btn-primary">
+                            Generate Flashcards
                           </button>
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                          Review Answers
-                        </h4>
-
-                        <div className="space-y-3">
-                          {quizResult.feedback.map((feed, fIdx) => {
-                            const originalQ = activeQuiz.questions.find((q) => q.id === feed.question_id);
-                            const studentAnsIdx = feed.student_answer ? parseInt(feed.student_answer) : null;
-                            const correctAnsIdx = parseInt(feed.correct_answer);
-
-                            return (
-                              <div
-                                key={feed.question_id}
-                                className={`rounded-xl border p-4 text-left shadow-2xs ${
-                                  feed.is_correct
-                                    ? 'bg-green-50/20 border-green-200'
-                                    : 'bg-red-50/20 border-red-200'
-                                }`}
-                              >
-                                <div className="flex justify-between items-center text-3xs font-bold uppercase tracking-wider mb-2">
-                                  <span className="text-gray-400">Question {fIdx + 1}</span>
-                                  <span
-                                    className={`px-2 py-0.5 rounded-full ${
-                                      feed.is_correct
-                                        ? 'bg-green-100 text-green-800'
-                                        : 'bg-red-100 text-red-800'
-                                    }`}
-                                  >
-                                    {feed.is_correct ? 'Correct' : 'Incorrect'}
-                                  </span>
-                                </div>
-                                <h5 className="text-xs md:text-sm font-bold text-gray-900 mb-3">
-                                  {feed.question_text}
-                                </h5>
-
-                                <div className="space-y-1.5">
-                                  {originalQ?.options.map((opt, oIdx) => {
-                                    const isCorrectOpt = oIdx === correctAnsIdx;
-                                    const isStudentChosen = oIdx === studentAnsIdx;
-
-                                    return (
-                                      <div
-                                        key={oIdx}
-                                        className={`px-3 py-2 rounded-lg border text-2xs md:text-xs font-semibold ${
-                                          isCorrectOpt
-                                            ? 'bg-green-100 border-green-300 text-green-900'
-                                            : isStudentChosen
-                                            ? 'bg-red-100 border-red-300 text-red-900'
-                                            : 'bg-white border-gray-200 text-gray-600'
-                                        }`}
-                                      >
-                                        <div className="flex items-center justify-between">
-                                          <span>{opt}</span>
-                                          {isCorrectOpt && (
-                                            <span className="text-green-700 font-bold">✔ Correct Answer</span>
-                                          )}
-                                          {isStudentChosen && !isCorrectOpt && (
-                                            <span className="text-red-700 font-bold">✘ Your Choice</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
+                        }
+                      />
+                      <ErrorBanner message={flashcardsError} className="mt-4 max-w-sm" />
                     </div>
                   )}
-                </div>
-              )}
-            </div>
-          ) : (
-            /* TAB 5: Short Answer Quiz Interface */
-            <div className="flex-grow flex flex-col overflow-hidden bg-gray-50/30">
-              
-              {!activeSaQuiz && !saLoading && (
-                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
-                  <h3 className="text-base font-bold text-gray-900">Short-Answer Quiz Not Generated</h3>
-                  <p className="text-xs text-gray-500 mt-2 max-w-xs leading-relaxed">
-                    Test your understanding with active writing. Submit short answers to be graded against course materials.
-                  </p>
-
-                  {saError && (
-                    <div className="mt-4 max-w-sm rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
-                      {saError}
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => triggerSAGeneration(false)}
-                    className="mt-5 rounded-lg bg-indigo-600 text-white px-5 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md transition"
-                  >
-                    Generate Short-Answer Quiz
-                  </button>
-                </div>
-              )}
-
-              {saLoading && (
-                <div className="flex-grow flex flex-col items-center justify-center p-8 text-center">
-                  <svg className="animate-spin h-10 w-10 text-indigo-600 mb-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                  </svg>
-                  <h4 className="text-sm font-bold text-gray-900">Formulating Short Questions...</h4>
-                  <p className="text-2xs text-gray-500 mt-1">Creating essay-style test questions requiring sentence answers...</p>
-                </div>
-              )}
-
-              {activeSaQuiz && !saLoading && (
-                <div className="flex-grow flex flex-col p-6 justify-between overflow-y-auto">
-                  <div className="bg-white border rounded-xl p-3 flex justify-between items-center flex-shrink-0 text-xs shadow-2xs mb-4">
-                    <span className="font-semibold text-gray-800">
-                      Quiz Mode: Written Short-Answer Test
-                    </span>
-                    <button
-                      onClick={() => triggerSAGeneration(true)}
-                      className="text-2xs text-indigo-600 hover:text-indigo-850 font-bold hover:underline"
-                    >
-                      Regenerate Quiz
-                    </button>
-                  </div>
-
-                  {saError && (
-                    <div className="mb-4 rounded-md bg-red-50 p-3 text-xs text-red-700 border border-red-200">
-                      ⚠️ {saError}
-                    </div>
-                  )}
-
-                  {!saQuizResult ? (
-                    <div className="flex-grow flex flex-col justify-between">
-                      {activeSaQuiz.questions.length === 0 ? (
-                        <div className="text-center py-12 text-gray-500 text-xs italic">
-                          No questions generated for this document.
-                        </div>
-                      ) : (
-                        <div className="space-y-6">
-                          {(() => {
-                            const q = activeSaQuiz.questions[currentSaIndex];
-                            const studentAnsText = saAnswers[q.id] || '';
-
-                            return (
-                              <div className="space-y-4">
-                                <div className="flex justify-between items-center text-3xs font-bold uppercase tracking-wider text-gray-400">
-                                  <span>Concept: {q.topic}</span>
-                                  <span>Question {currentSaIndex + 1} of {activeSaQuiz.questions.length}</span>
-                                </div>
-                                <h3 className="text-sm md:text-base font-bold text-gray-900 leading-normal">
-                                  {q.question}
-                                </h3>
-
-                                <div className="pt-2">
-                                  <label htmlFor={`sa-input-${q.id}`} className="sr-only">
-                                    Your Answer
-                                  </label>
-                                  <textarea
-                                    id={`sa-input-${q.id}`}
-                                    rows={4}
-                                    placeholder="Type your answer in 1-3 sentences..."
-                                    value={studentAnsText}
-                                    onChange={(e) => handleSaTextChange(q.id, e.target.value)}
-                                    className="block w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })()}
-
-                          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-100">
-                            <div className="flex items-center space-x-3">
-                              <button
-                                onClick={() => setCurrentSaIndex((prev) => Math.max(prev - 1, 0))}
-                                disabled={currentSaIndex === 0}
-                                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
-                              >
-                                ◀ Previous
-                              </button>
-                              <button
-                                onClick={() =>
-                                  setCurrentSaIndex((prev) =>
-                                    Math.min(prev + 1, activeSaQuiz.questions.length - 1)
-                                  )
-                                }
-                                disabled={currentSaIndex === activeSaQuiz.questions.length - 1}
-                                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs transition"
-                              >
-                                Next ▶
-                              </button>
-                            </div>
-
-                            <button
-                              onClick={handleSaQuizSubmit}
-                              disabled={submittingSaQuiz}
-                              className="w-full sm:w-auto rounded-lg bg-indigo-600 text-white px-6 py-2.5 text-xs font-bold hover:bg-indigo-700 shadow-md disabled:opacity-50 transition"
-                            >
-                              {submittingSaQuiz ? 'Submitting...' : 'Submit Quiz'}
-                            </button>
-                          </div>
-
-                          <p className="text-3xs text-gray-400 text-center">
-                            Note: You can submit the quiz even with blank fields. Unanswered items will simply be marked incorrect.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-6">
-                      <div className="bg-indigo-600 text-white rounded-2xl p-6 text-center shadow-md relative overflow-hidden">
-                        <div className="absolute -top-12 -left-12 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
-                        <div className="relative">
-                          <h3 className="text-xs uppercase tracking-widest font-semibold text-indigo-200">
-                            Quiz Completed (Keyword Graded)
-                          </h3>
-                          <div className="text-3xl md:text-4xl font-black mt-1">
-                            {Math.round(saQuizResult.score * 100)}%
-                          </div>
-                          <p className="text-xs text-indigo-150 mt-1">
-                            Score: <strong>{saQuizResult.correct_count}</strong> / {saQuizResult.questions_count} correct
-                          </p>
-                          <button
-                            onClick={() => triggerSAGeneration(true)}
-                            className="mt-4 inline-flex items-center rounded-lg bg-white/20 hover:bg-white/30 text-white px-4 py-1.5 text-xs font-bold transition"
+                  {flashcardsLoading && <QuizLoadingPane label="Creating flashcards…" />}
+                  {allCards.length > 0 && !flashcardsLoading && (
+                    <div className="flex-grow flex flex-col p-6 overflow-y-auto">
+                      {/* Controls */}
+                      <div className="flex justify-between items-center mb-6">
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs font-semibold text-gray-600">Topic:</label>
+                          <select
+                            value={topicFilter}
+                            onChange={(e) => { setTopicFilter(e.target.value); setCurrentCardIndex(0); setFlipped(false); }}
+                            className="text-xs rounded-md border border-gray-300 bg-white px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                           >
-                            Retake New Quiz
-                          </button>
+                            {uniqueTopics.map((t, i) => <option key={i} value={t}>{t}</option>)}
+                          </select>
                         </div>
+                        <button onClick={() => triggerFlashcards(true)} className="text-xs text-indigo-600 hover:underline font-semibold">
+                          ↺ Regenerate
+                        </button>
                       </div>
+                      <ErrorBanner message={flashcardsError} className="mb-4" />
 
-                      <div className="space-y-4">
-                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                          Review Written Answers
-                        </h4>
-
-                        <div className="space-y-4">
-                          {saQuizResult.feedback.map((feed, fIdx) => {
-                            return (
-                              <div
-                                key={feed.question_id}
-                                className={`rounded-xl border p-4 text-left shadow-2xs space-y-3 ${
-                                  feed.is_correct
-                                    ? 'bg-green-50/20 border-green-200'
-                                    : 'bg-red-50/20 border-red-200'
-                                }`}
-                              >
-                                <div className="flex justify-between items-center text-3xs font-bold uppercase tracking-wider">
-                                  <span className="text-gray-400">Question {fIdx + 1}</span>
-                                  <span
-                                    className={`px-2 py-0.5 rounded-full ${
-                                      feed.is_correct
-                                        ? 'bg-green-100 text-green-800'
-                                        : 'bg-red-100 text-red-800'
-                                    }`}
-                                  >
-                                    {feed.is_correct ? 'Correct' : 'Incorrect'}
-                                  </span>
-                                </div>
-                                <h5 className="text-xs md:text-sm font-bold text-gray-900">
-                                  {feed.question_text}
-                                </h5>
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
-                                  <div className="bg-white p-3 rounded-lg border border-gray-200">
-                                    <div className="text-3xs font-bold uppercase tracking-wider text-gray-400 mb-1">
-                                      Your Answer
-                                    </div>
-                                    <p className={`text-2xs md:text-xs leading-normal ${
-                                      feed.student_answer ? 'text-gray-800' : 'text-gray-400 italic'
-                                    }`}>
-                                      {feed.student_answer || '(Empty Submission)'}
-                                    </p>
-                                  </div>
-
-                                  <div className="bg-indigo-50/30 p-3 rounded-lg border border-indigo-100">
-                                    <div className="text-3xs font-bold uppercase tracking-wider text-indigo-500 mb-1">
-                                      Model Reference Answer
-                                    </div>
-                                    <p className="text-2xs md:text-xs text-indigo-900 leading-normal font-semibold">
-                                      {feed.correct_answer}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="text-3xs text-gray-400 leading-relaxed italic bg-white/40 p-2 rounded border border-gray-100 mt-2">
-                                  * Note: Written answers are graded using case-insensitive keyword inclusion. 
-                                  Please compare your response to the Model Reference Answer above to judge your accuracy.
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-        </div>
-
-        {/* SECTION 3: Quiz History Dashboard (Full Width) */}
-        <section className="bg-white rounded-2xl p-6 shadow-md border border-gray-100">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold text-gray-900">Quiz Performance History</h2>
-            <button
-              onClick={fetchQuizHistory}
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-850"
-            >
-              Refresh History
-            </button>
-          </div>
-
-          {loadingHistory && historyList.length === 0 ? (
-            <div className="text-center py-8 text-sm text-gray-500">Loading performance records...</div>
-          ) : historyList.length === 0 ? (
-            <div className="text-center py-12 text-sm text-gray-500 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/30">
-              No quizzes attempted yet — generate one from a document above to get started!
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Document
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Quiz Type
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Score
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      Attempted At
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {historyList.map((hist, idx) => {
-                    const pctScore = Math.round(hist.score * 100);
-                    return (
-                      <tr key={idx} className="hover:bg-gray-50 transition">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
-                          {hist.document_filename}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 uppercase">
-                          {hist.quiz_type === 'mcq' ? 'Multiple Choice' : 'Short Answer'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-bold">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-xs ${
-                              hist.score >= 0.7
-                                ? 'bg-green-100 text-green-800'
-                                : hist.score >= 0.4
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-red-100 text-red-800'
+                      {!filteredCards.length ? (
+                        <p className="text-center py-10 text-xs text-gray-400 italic">No cards match this topic.</p>
+                      ) : (
+                        <div className="flex flex-col items-center gap-6">
+                          {/* Card */}
+                          <div
+                            onClick={() => setFlipped(!flipped)}
+                            className={`w-full max-w-md min-h-[180px] flex flex-col justify-between p-6 rounded-2xl border cursor-pointer select-none transition-all shadow-md ${
+                              flipped
+                                ? 'bg-indigo-50 border-indigo-300 ring-4 ring-indigo-500/10'
+                                : 'bg-white border-gray-200 hover:border-gray-300'
                             }`}
                           >
-                            {pctScore}%
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(hist.attempted_at).toLocaleString()}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+                            <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-gray-400">
+                              <span>{displayCard.topic}</span>
+                              <span className={flipped ? 'text-indigo-600' : ''}>{flipped ? 'Answer' : 'Question'}</span>
+                            </div>
+                            <div className="py-4 text-center">
+                              <p className={`text-sm font-bold leading-relaxed ${flipped ? 'text-gray-700 font-normal' : 'text-gray-900'}`}>
+                                {flipped ? displayCard.back : displayCard.front}
+                              </p>
+                            </div>
+                            <p className="text-center text-xs text-gray-400">
+                              {flipped ? 'Click to show question' : 'Click to flip'}
+                            </p>
+                          </div>
+                          {/* Progress & nav */}
+                          <p className="text-xs font-semibold text-gray-500">
+                            Card {currentCardIndex + 1} of {filteredCards.length}
+                          </p>
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => { setFlipped(false); setCurrentCardIndex((p) => Math.max(p - 1, 0)); }}
+                              disabled={currentCardIndex === 0}
+                              className="btn-secondary text-xs px-4 py-2"
+                            >◀ Prev</button>
+                            <button
+                              onClick={() => { setFlipped(false); setCurrentCardIndex((p) => Math.min(p + 1, filteredCards.length - 1)); }}
+                              disabled={currentCardIndex === filteredCards.length - 1}
+                              className="btn-secondary text-xs px-4 py-2"
+                            >Next ▶</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
 
-      </div>
-      ) : (
-        /* VIEW 2: My Progress (Analytics Dashboard) */
-        <div className="flex-grow mx-auto max-w-7xl w-full px-4 py-8 sm:px-6 lg:px-8 space-y-8 overflow-y-auto"
->
-          
-          <div className="flex justify-between items-center pb-4 border-b border-gray-200">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-950">My Learning Progress</h1>
-              <p className="text-xs text-gray-500">Real-time weak topic aggregation and AI-guided study recommendations.</p>
+              ) : activeTab === 'mcqs' ? (
+                /* TAB: MCQ Quiz */
+                <div className="flex-grow flex flex-col overflow-hidden">
+                  {!activeMcqQuiz && !mcqsLoading && (
+                    <div className="flex-grow flex flex-col items-center justify-center p-10 text-center">
+                      <EmptyState
+                        title="MCQ Quiz Not Generated"
+                        body="Test your understanding with dynamically generated multiple-choice questions."
+                        action={
+                          <button onClick={() => triggerMCQs(false)} className="btn-primary">
+                            Generate MCQ Quiz
+                          </button>
+                        }
+                      />
+                      <ErrorBanner message={mcqsError} className="mt-4 max-w-sm" />
+                    </div>
+                  )}
+                  {mcqsLoading && <QuizLoadingPane label="Generating MCQ quiz…" />}
+                  {activeMcqQuiz && !mcqsLoading && (
+                    <div className="flex-grow flex flex-col p-6 overflow-y-auto space-y-5">
+                      {/* Subheader */}
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-semibold text-gray-700">MCQ Practice Test</span>
+                        <button onClick={() => triggerMCQs(true)} className="text-xs text-indigo-600 hover:underline font-semibold">↺ Regenerate</button>
+                      </div>
+                      <ErrorBanner message={mcqsError} />
+
+                      {!quizResult ? (
+                        /* Taking quiz */
+                        (() => {
+                          const q = activeMcqQuiz.questions[currentMcqIndex];
+                          const chosen = mcqAnswers[q.id];
+                          return (
+                            <div className="space-y-5">
+                              <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-gray-400">
+                                <span>{q.topic}</span>
+                                <span>Q{currentMcqIndex + 1} / {activeMcqQuiz.questions.length}</span>
+                              </div>
+                              <p className="text-sm font-bold text-gray-900 leading-normal">{q.question}</p>
+                              <div className="space-y-2.5">
+                                {q.options.map((opt, oi) => {
+                                  const sel = chosen === oi;
+                                  return (
+                                    <button
+                                      key={oi}
+                                      onClick={() => setMcqAnswers((p) => ({ ...p, [q.id]: oi }))}
+                                      className={`w-full text-left px-4 py-3 rounded-xl border text-sm font-semibold transition ${
+                                        sel ? 'bg-indigo-50 border-indigo-400 ring-2 ring-indigo-500/10 text-indigo-900'
+                                            : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'
+                                      }`}
+                                    >
+                                      <span className={`inline-flex h-4 w-4 rounded-full border mr-3 items-center justify-center flex-shrink-0 ${sel ? 'border-indigo-600 bg-indigo-600' : 'border-gray-300'}`}>
+                                        {sel && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                                      </span>
+                                      {opt}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                                <div className="flex gap-2">
+                                  <button onClick={() => setCurrentMcqIndex((p) => Math.max(p - 1, 0))} disabled={currentMcqIndex === 0} className="btn-secondary text-xs px-3 py-2">◀ Prev</button>
+                                  <button onClick={() => setCurrentMcqIndex((p) => Math.min(p + 1, activeMcqQuiz.questions.length - 1))} disabled={currentMcqIndex === activeMcqQuiz.questions.length - 1} className="btn-secondary text-xs px-3 py-2">Next ▶</button>
+                                </div>
+                                <button onClick={handleMcqSubmit} disabled={submittingQuiz} className="btn-primary text-xs px-5 py-2">
+                                  {submittingQuiz ? 'Submitting…' : 'Submit Quiz'}
+                                </button>
+                              </div>
+                              <p className="text-xs text-gray-400 text-center">Unanswered questions count as incorrect.</p>
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        /* Results */
+                        <div className="space-y-6">
+                          <div className="bg-indigo-600 text-white rounded-2xl p-6 text-center relative overflow-hidden shadow-md">
+                            <div className="absolute -top-10 -left-10 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+                            <div className="relative">
+                              <p className="text-xs uppercase tracking-widest text-indigo-200">Quiz Complete</p>
+                              <p className="text-4xl font-black mt-1">{Math.round(quizResult.score * 100)}%</p>
+                              <p className="text-xs text-indigo-200 mt-1">{quizResult.correct_count} / {quizResult.questions_count} correct</p>
+                              <button onClick={() => triggerMCQs(true)} className="mt-4 inline-flex btn-ghost text-white hover:bg-white/20 text-xs px-4 py-1.5">Retake New Quiz</button>
+                            </div>
+                          </div>
+                          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Review Answers</h4>
+                          <div className="space-y-3">
+                            {quizResult.feedback.map((feed, fi) => {
+                              const origQ = activeMcqQuiz.questions.find((q) => q.id === feed.question_id);
+                              const stuIdx = feed.student_answer !== '' ? parseInt(feed.student_answer) : null;
+                              const corIdx = parseInt(feed.correct_answer);
+                              return (
+                                <div key={fi} className={`rounded-xl border p-4 ${feed.is_correct ? 'bg-green-50/30 border-green-200' : 'bg-red-50/30 border-red-200'}`}>
+                                  <div className="flex justify-between text-xs font-bold uppercase tracking-wider mb-2">
+                                    <span className="text-gray-400">Q{fi + 1}</span>
+                                    <span className={feed.is_correct ? 'score-badge-green' : 'score-badge-red'}>{feed.is_correct ? '✓ Correct' : '✗ Incorrect'}</span>
+                                  </div>
+                                  <p className="text-sm font-bold text-gray-900 mb-3">{feed.question_text}</p>
+                                  <div className="space-y-1.5">
+                                    {origQ?.options.map((opt, oi) => {
+                                      const isRight = oi === corIdx, isChosen = oi === stuIdx;
+                                      return (
+                                        <div key={oi} className={`px-3 py-2 rounded-lg border text-xs font-semibold flex justify-between ${
+                                          isRight ? 'bg-green-100 border-green-300 text-green-900'
+                                          : isChosen ? 'bg-red-100 border-red-300 text-red-900'
+                                          : 'bg-white border-gray-200 text-gray-600'
+                                        }`}>
+                                          <span>{opt}</span>
+                                          {isRight  && <span className="text-green-700 font-bold">✔ Correct</span>}
+                                          {isChosen && !isRight && <span className="text-red-700 font-bold">✘ Yours</span>}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+              ) : (
+                /* TAB: Short Answer */
+                <div className="flex-grow flex flex-col overflow-hidden">
+                  {!activeSaQuiz && !saLoading && (
+                    <div className="flex-grow flex flex-col items-center justify-center p-10 text-center">
+                      <EmptyState
+                        title="Short-Answer Quiz Not Generated"
+                        body="Write short answers graded against the document's content."
+                        action={
+                          <button onClick={() => triggerSA(false)} className="btn-primary">
+                            Generate Short-Answer Quiz
+                          </button>
+                        }
+                      />
+                      <ErrorBanner message={saError} className="mt-4 max-w-sm" />
+                    </div>
+                  )}
+                  {saLoading && <QuizLoadingPane label="Generating short-answer quiz…" />}
+                  {activeSaQuiz && !saLoading && (
+                    <div className="flex-grow flex flex-col p-6 overflow-y-auto space-y-5">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-semibold text-gray-700">Written Short-Answer Test</span>
+                        <button onClick={() => triggerSA(true)} className="text-xs text-indigo-600 hover:underline font-semibold">↺ Regenerate</button>
+                      </div>
+                      <ErrorBanner message={saError} />
+
+                      {!saResult ? (
+                        (() => {
+                          const q = activeSaQuiz.questions[currentSaIndex];
+                          return (
+                            <div className="space-y-5">
+                              <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-gray-400">
+                                <span>{q.topic}</span>
+                                <span>Q{currentSaIndex + 1} / {activeSaQuiz.questions.length}</span>
+                              </div>
+                              <p className="text-sm font-bold text-gray-900 leading-normal">{q.question}</p>
+                              <textarea
+                                rows={4}
+                                placeholder="Type your answer in 1–3 sentences…"
+                                value={saAnswers[q.id] || ''}
+                                onChange={(e) => setSaAnswers((p) => ({ ...p, [q.id]: e.target.value }))}
+                                className="form-textarea"
+                              />
+                              <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                                <div className="flex gap-2">
+                                  <button onClick={() => setCurrentSaIndex((p) => Math.max(p - 1, 0))} disabled={currentSaIndex === 0} className="btn-secondary text-xs px-3 py-2">◀ Prev</button>
+                                  <button onClick={() => setCurrentSaIndex((p) => Math.min(p + 1, activeSaQuiz.questions.length - 1))} disabled={currentSaIndex === activeSaQuiz.questions.length - 1} className="btn-secondary text-xs px-3 py-2">Next ▶</button>
+                                </div>
+                                <button onClick={handleSaSubmit} disabled={submittingSa} className="btn-primary text-xs px-5 py-2">
+                                  {submittingSa ? 'Submitting…' : 'Submit Quiz'}
+                                </button>
+                              </div>
+                              <p className="text-xs text-gray-400 text-center">Blank answers count as incorrect.</p>
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        /* SA Results */
+                        <div className="space-y-6">
+                          <div className="bg-indigo-600 text-white rounded-2xl p-6 text-center relative overflow-hidden shadow-md">
+                            <div className="absolute -top-10 -left-10 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+                            <div className="relative">
+                              <p className="text-xs uppercase tracking-widest text-indigo-200">Quiz Complete · Keyword Graded</p>
+                              <p className="text-4xl font-black mt-1">{Math.round(saResult.score * 100)}%</p>
+                              <p className="text-xs text-indigo-200 mt-1">{saResult.correct_count} / {saResult.questions_count} correct</p>
+                              <button onClick={() => triggerSA(true)} className="mt-4 inline-flex btn-ghost text-white hover:bg-white/20 text-xs px-4 py-1.5">Retake New Quiz</button>
+                            </div>
+                          </div>
+                          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Review Written Answers</h4>
+                          <div className="space-y-4">
+                            {saResult.feedback.map((feed, fi) => (
+                              <div key={fi} className={`rounded-xl border p-4 space-y-3 ${feed.is_correct ? 'bg-green-50/30 border-green-200' : 'bg-red-50/30 border-red-200'}`}>
+                                <div className="flex justify-between text-xs font-bold uppercase tracking-wider">
+                                  <span className="text-gray-400">Q{fi + 1}</span>
+                                  <span className={feed.is_correct ? 'score-badge-green' : 'score-badge-red'}>{feed.is_correct ? '✓ Correct' : '✗ Incorrect'}</span>
+                                </div>
+                                <p className="text-sm font-bold text-gray-900">{feed.question_text}</p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  <div className="card-sm">
+                                    <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1">Your Answer</p>
+                                    <p className={`text-xs leading-normal ${feed.student_answer ? 'text-gray-800' : 'text-gray-400 italic'}`}>
+                                      {feed.student_answer || '(empty)'}
+                                    </p>
+                                  </div>
+                                  <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                                    <p className="text-xs font-bold uppercase tracking-wider text-indigo-500 mb-1">Model Answer</p>
+                                    <p className="text-xs text-indigo-900 leading-normal font-semibold">{feed.correct_answer}</p>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-gray-400 italic">
+                                  * Graded by keyword match — compare to model answer to assess your understanding.
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <button
-              onClick={fetchAnalytics}
-              disabled={loadingAnalytics}
-              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-indigo-600 hover:bg-gray-50 transition"
-            >
-              {loadingAnalytics ? 'Loading...' : '↻ Refresh Analytics'}
+          </div>
+
+          {/* Quiz History table */}
+          <section className="card">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="section-title">Quiz Performance History</h2>
+              <button onClick={fetchHistory} className="btn-ghost text-xs text-indigo-600">↻ Refresh</button>
+            </div>
+            {loadingHistory && !historyList.length ? (
+              <div className="text-center py-8 text-sm text-gray-400">Loading…</div>
+            ) : !historyList.length ? (
+              <EmptyState body="No quizzes attempted yet — generate one from a document above to get started!" />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      {['Document', 'Quiz Type', 'Score', 'Attempted At'].map((h) => (
+                        <th key={h} className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-100">
+                    {historyList.map((h, i) => (
+                      <tr key={i} className="hover:bg-gray-50 transition">
+                        <td className="px-5 py-3 text-sm font-semibold text-gray-900">{h.document_filename}</td>
+                        <td className="px-5 py-3 text-sm text-gray-500">{h.quiz_type === 'mcq' ? 'Multiple Choice' : 'Short Answer'}</td>
+                        <td className="px-5 py-3"><ScoreBadge score={h.score} /></td>
+                        <td className="px-5 py-3 text-sm text-gray-500">{new Date(h.attempted_at).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* ═══ ANALYTICS VIEW ═══════════════════════════════ */}
+      {currentView === 'analytics' && (
+        <div className="flex-grow mx-auto max-w-7xl w-full px-4 py-8 sm:px-6 lg:px-8 space-y-8">
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">My Learning Progress</h1>
+              <p className="section-subtitle">Weak-topic breakdown from graded quiz history · recommendations sorted weakest first</p>
+            </div>
+            <button onClick={fetchAnalytics} disabled={loadingAnalytics} className="btn-secondary text-xs">
+              {loadingAnalytics ? <><Spinner size="sm" className="mr-1.5" />Loading…</> : '↻ Refresh'}
             </button>
           </div>
 
-          {analyticsError && (
-            <div className="rounded-md bg-red-50 p-4 text-sm text-red-700 border border-red-200">
-              {analyticsError}
-            </div>
-          )}
+          <ErrorBanner message={analyticsError} />
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            
-            {/* Left Panel: Weak Topics List (7 Cols) */}
-            <div className="lg:col-span-7 bg-white rounded-2xl p-6 shadow-md border border-gray-100">
-              <h2 className="text-lg font-bold text-gray-900 mb-4">Topic Accuracy Breakdown</h2>
-              
-              {loadingAnalytics && weakTopics.length === 0 ? (
-                <div className="text-center py-12 text-sm text-gray-500">Loading topic analytics...</div>
-              ) : weakTopics.length === 0 ? (
-                <div className="text-center py-12 text-sm text-gray-500 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/20">
-                  No topic performance data available yet. 
-                  <p className="text-2xs text-gray-400 mt-2">
-                    Tip: Complete quizzes with at least 3 questions per topic to populate analysis reports!
-                  </p>
-                </div>
+            {/* Weak topics */}
+            <div className="lg:col-span-7 card space-y-5">
+              <h2 className="section-title">Topic Accuracy Breakdown</h2>
+              {loadingAnalytics && !weakTopics.length ? (
+                <LoadingPane label="Analysing quiz history…" />
+              ) : !weakTopics.length ? (
+                <EmptyState
+                  body="No topic data yet. Complete quizzes with ≥ 3 questions per topic to see results here."
+                />
               ) : (
                 <div className="space-y-5">
-                  {weakTopics.map((wt, idx) => {
-                    const isWeak = wt.accuracy_percentage < 50;
-                    const isAverage = wt.accuracy_percentage >= 50 && wt.accuracy_percentage < 75;
-                    const colorClass = isWeak
-                      ? 'bg-red-500'
-                      : isAverage
-                      ? 'bg-yellow-500'
-                      : 'bg-green-500';
-
+                  {weakTopics.map((wt, i) => {
+                    const pct = wt.accuracy_percentage;
+                    const barColor = pct < 50 ? 'bg-red-500' : pct < 75 ? 'bg-yellow-500' : 'bg-green-500';
                     return (
-                      <div key={idx} className="space-y-2">
-                        <div className="flex justify-between items-center text-xs">
+                      <div key={i} className="space-y-1.5">
+                        <div className="flex justify-between text-sm">
                           <span className="font-semibold text-gray-800">{wt.topic}</span>
-                          <span className="text-gray-500 font-medium">
-                            {wt.correct_count} / {wt.total_attempted} answers correct ({wt.accuracy_percentage}%)
+                          <span className="text-gray-500 text-xs">
+                            {wt.correct_count}/{wt.total_attempted} correct &nbsp;·&nbsp; <strong>{pct}%</strong>
                           </span>
                         </div>
-                        {/* Progress bar visual */}
                         <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
                           <div
-                            className={`h-2.5 rounded-full ${colorClass} transition-all`}
-                            style={{ width: `${wt.accuracy_percentage}%` }}
+                            className={`h-2.5 rounded-full ${barColor} transition-all duration-500`}
+                            style={{ width: `${pct}%` }}
                           />
                         </div>
                       </div>
@@ -1727,61 +1114,107 @@ const Dashboard = () => {
               )}
             </div>
 
-            {/* Right Panel: Recommendations (5 Cols) */}
-            <div className="lg:col-span-5 bg-white rounded-2xl p-6 shadow-md border border-gray-100 flex flex-col justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-4">What to Revise Next</h2>
-                
-                {loadingAnalytics && recommendations.length === 0 ? (
-                  <div className="text-center py-12 text-sm text-gray-500">Loading recommendations...</div>
-                ) : recommendations.length === 0 ? (
-                  <div className="text-center py-12 text-sm text-gray-500 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/20">
-                    No active study recommendations.
-                    <p className="text-2xs text-gray-400 mt-2">
-                      Complete quiz tests to flag weak concepts and get targeted slide guides.
-                    </p>
+            {/* Recommendations */}
+            <div className="lg:col-span-5 card flex flex-col gap-4">
+              <h2 className="section-title">What to Revise Next</h2>
+              {loadingAnalytics && !recommendations.length ? (
+                <LoadingPane label="Loading recommendations…" />
+              ) : !recommendations.length ? (
+                <EmptyState body="No recommendations yet. Complete more quizzes to unlock targeted study suggestions." />
+              ) : (
+                recommendations.map((rec, i) => (
+                  <div key={i} className="bg-indigo-50/40 border border-indigo-100 rounded-xl p-4 flex flex-col gap-2">
+                    <span className="inline-flex px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-xs font-bold uppercase tracking-wider w-fit">
+                      {rec.topic}
+                    </span>
+                    <p className="text-sm text-gray-700 font-medium">{rec.reason}</p>
+                    <div className="flex justify-between items-center border-t border-indigo-100 pt-2 mt-1 text-xs">
+                      <span className="text-gray-400 truncate">{rec.document_filename}</span>
+                      <button
+                        onClick={() => handleRecommendationClick(rec.document_id)}
+                        className="text-indigo-600 font-bold hover:underline ml-2 flex-shrink-0"
+                      >
+                        Open Notes ↗
+                      </button>
+                    </div>
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    {recommendations.map((rec, idx) => (
-                      <div key={idx} className="bg-indigo-50/40 p-4 rounded-xl border border-indigo-100 flex flex-col justify-between gap-3">
-                        <div>
-                          <span className="inline-flex px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-3xs font-bold uppercase tracking-wider">
-                            Topic: {rec.topic}
-                          </span>
-                          <p className="text-xs text-gray-700 font-semibold mt-2">
-                            {rec.reason}
-                          </p>
-                        </div>
-                        <div className="flex justify-between items-center border-t border-indigo-100/50 pt-2.5 mt-1">
-                          <span className="text-3xs text-gray-400 truncate max-w-[150px]">
-                            File: {rec.document_filename}
-                          </span>
-                          <button
-                            onClick={() => handleRecommendationClick(rec.document_id)}
-                            className="text-3xs font-black text-indigo-650 hover:text-indigo-850 hover:underline uppercase tracking-wider"
-                          >
-                            Open Slides ↗
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              
-              <div className="mt-6 bg-gray-50 p-4 rounded-xl border border-gray-150 border-gray-200 text-3xs text-gray-400 leading-normal">
-                * Note: Topics are calculated strictly from your graded quiz attempt history. 
-                Topics with fewer than 3 total question attempts are ignored to ensure accurate tracking.
+                ))
+              )}
+              <div className="mt-auto pt-4 border-t border-gray-100 text-xs text-gray-400 leading-relaxed">
+                Topics with fewer than 3 question attempts are excluded to avoid statistical noise.
               </div>
             </div>
+          </div>
+        </div>
+      )}
 
+      {/* ═══ SETTINGS VIEW ════════════════════════════════ */}
+      {currentView === 'settings' && (
+        <div className="flex-grow mx-auto max-w-2xl w-full px-4 py-10 sm:px-6 space-y-8">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+            <p className="section-subtitle">Personalise your AI Study Companion experience.</p>
           </div>
 
+          <section className="card space-y-6">
+            <div>
+              <h2 className="section-title">Mentor Persona</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Toggle Hinglish Mentor Mode to receive Q&amp;A answers, study notes, flashcards, MCQ feedback, and revision recommendations in a friendly Hinglish style (English mixed with casual Hindi).
+              </p>
+            </div>
+
+            {settingsLoading ? (
+              <LoadingPane label="Loading settings…" />
+            ) : (
+              <div className="flex items-center justify-between p-4 rounded-xl border border-gray-200 bg-gray-50">
+                <div>
+                  <p className="text-sm font-bold text-gray-900">🇮🇳 Hinglish Mentor Mode</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Currently: <strong className={personaMode ? 'text-orange-600' : 'text-gray-600'}>
+                      {personaMode ? 'ON' : 'OFF'}
+                    </strong>
+                  </p>
+                </div>
+                <button
+                  onClick={handlePersonaToggle}
+                  disabled={settingsSaving}
+                  aria-pressed={personaMode}
+                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+                    personaMode ? 'bg-indigo-600' : 'bg-gray-300'
+                  } ${settingsSaving ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${
+                      personaMode ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            )}
+
+            <SuccessBanner message={settingsSaved ? 'Setting saved!' : ''} />
+            <ErrorBanner  message={settingsError} />
+
+            <div className="alert-info rounded-xl text-xs leading-relaxed">
+              <strong>How this works:</strong> Persona mode is a server-side setting stored on your user account.
+              Every subsequent LLM call (Q&amp;A, notes, flashcards, MCQs, short-answer, recommendations) automatically
+              reads your current <code>persona_mode</code> flag — no changes needed to any individual feature page.
+              Simply toggle here and generate or ask again.
+            </div>
+          </section>
+
+          <section className="card space-y-4">
+            <h2 className="section-title">Account</h2>
+            <div className="flex justify-between items-center text-sm">
+              <div>
+                <p className="font-semibold text-gray-900">{user?.email || '—'}</p>
+                <p className="text-gray-400 text-xs">Signed-in account</p>
+              </div>
+            </div>
+          </section>
         </div>
       )}
     </div>
   );
-};
-
-export default Dashboard;
+}
