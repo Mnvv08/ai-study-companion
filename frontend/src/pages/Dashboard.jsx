@@ -470,6 +470,10 @@ const Dashboard = () => {
     }
   };
 
+  const handleSaTextChange = (questionId, value) => {
+    setSaAnswers((prev) => ({ ...prev, [questionId]: value }));
+  };
+
   const handleRecommendationClick = (docId) => {
     if (docId && docId !== 'unknown') {
       setSelectedDocId(docId);
@@ -1652,7 +1656,8 @@ const Dashboard = () => {
       </div>
       ) : (
         /* VIEW 2: My Progress (Analytics Dashboard) */
-        <div className="flex-grow mx-auto max-w-7xl w-full px-4 py-8 sm:px-6 lg:px-8 space-y-8 overflow-y-auto">
+        <div className="flex-grow mx-auto max-w-7xl w-full px-4 py-8 sm:px-6 lg:px-8 space-y-8 overflow-y-auto"
+>
           
           <div className="flex justify-between items-center pb-4 border-b border-gray-200">
             <div>
