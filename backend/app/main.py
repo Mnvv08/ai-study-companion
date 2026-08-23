@@ -49,7 +49,8 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS Middleware
 
 origins = [
-    "https://ai-study-companion-neon.vercel.app",
+    
+    "https://ai-study-companion-git-main-mnvv08s-projects.vercel.app",
 ]
 
 app.add_middleware(
