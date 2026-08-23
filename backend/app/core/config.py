@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     CHROMA_PORT: int = Field(default=8000)
 
     # ── File Uploads ─────────────────────────────────────────────
-    UPLOAD_DIR: str = Field(default="./uploads")
+    UPLOAD_DIR: str = Field(default="/app/uploads")
     MAX_UPLOAD_SIZE_MB: int = Field(default=20)
     ALLOWED_EXTENSIONS: str = Field(default="pdf,pptx,ppt")
 
