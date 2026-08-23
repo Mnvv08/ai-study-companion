@@ -4,7 +4,7 @@ import apiClient from '../api/client';
 export const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [token, setToken] = useState(null);
+  const [token, setToken] = useState(() => localStorage.getItem('token') || null);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -31,6 +31,7 @@ export const AuthProvider = ({ children }) => {
       } catch (err) {
         console.error('Failed to fetch user info', err);
         // Clear token if fetching user fails (e.g. token expired)
+        localStorage.removeItem('token');
         setToken(null);
       } finally {
         setLoading(false);
@@ -42,6 +43,7 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     const response = await apiClient.post('/auth/login', { email, password });
     const { access_token } = response.data;
+    localStorage.setItem('token', access_token);
     setToken(access_token);
     return access_token;
   };
@@ -52,6 +54,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    localStorage.removeItem('token');
     setToken(null);
     setUser(null);
   };
