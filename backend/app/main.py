@@ -47,11 +47,10 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS Middleware
-origins = (
-    ["*"]
-    if settings.APP_ENV == "development"
-    else ["https://your-production-domain.com"]
-)
+
+origins = [
+    "https://ai-study-companion-neon.vercel.app",
+]
 
 app.add_middleware(
     CORSMiddleware,
