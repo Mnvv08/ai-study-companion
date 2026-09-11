@@ -4,7 +4,7 @@ Upload a PDF or slide deck, get study material generated from it — structured 
 flashcards, MCQs, short-answer questions — then sit the quiz, and let the system work out
 what you keep getting wrong.
 
-**[Live demo](https://ai-study-companion-neon.vercel.app)** · [API docs](REPLACE_WITH_BACKEND_URL/docs)
+**[Live demo](https://ai-study-companion-neon.vercel.app)** · [API docs](YOUR_URL_HERE/docs)
 
 [![tests](https://github.com/Mnvv08/ai-study-companion/actions/workflows/tests.yml/badge.svg)](https://github.com/Mnvv08/ai-study-companion/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
