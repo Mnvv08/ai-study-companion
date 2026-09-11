@@ -47,38 +47,22 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS Middleware
-
-origins = [
-    
-    "https://ai-study-companion-git-main-mnvv08s-projects.vercel.app",
-]
-
+# Origins come from the ALLOWED_ORIGINS env var so that adding a new
+# frontend URL is a config change on the host, not a code edit + redeploy.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Register Routers
-app.include_router(health.router, prefix="/api/v1")
-app.include_router(auth.router, prefix="/api/v1")
-app.include_router(documents.router, prefix="/api/v1")
-app.include_router(documents.router)  # Also expose directly at /documents/upload etc.
-app.include_router(files.router, prefix="/api/v1")
-app.include_router(notes.router, prefix="/api/v1")
-app.include_router(notes.router)  # Direct /notes/generate access
-app.include_router(generation.router, prefix="/api/v1")
-app.include_router(generation.router)  # Direct /flashcards/generate, /mcq/generate access
-app.include_router(rag.router, prefix="/api/v1")
-app.include_router(rag.router)  # Direct /qa/ask access
-app.include_router(quizzes.router, prefix="/api/v1")
-app.include_router(quizzes.router)  # Direct /quizzes/{quiz_id} access
-app.include_router(analytics.router, prefix="/api/v1")
-app.include_router(analytics.router)  # Direct /analytics/weak-topics access
-app.include_router(users.router, prefix="/api/v1")
-app.include_router(users.router)  # Direct /users/me/settings access
+# Every router is mounted once, under /api/v1. Registering them a second time
+# without the prefix previously produced duplicate paths in the OpenAPI schema
+# and two URLs for every endpoint.
+for router in (health, auth, documents, files, notes, generation, rag, quizzes, analytics, users):
+    app.include_router(router.router, prefix="/api/v1")
 
 
 @app.get("/", tags=["Root"])

@@ -27,3 +27,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# ── Vector store data (generated at runtime, not source) ─────────
+backend/chroma_db_data/
+chroma_db_data/
