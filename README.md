@@ -49,6 +49,8 @@ almost anything else, because a confident wrong explanation is worse than no exp
   with a full attempt history
 - **Weak-topic analytics and revision recommendations** derived from that history, not from
   a fresh prompt to the model
+- **Spaced-repetition scheduling** over those topics using SM-2, so the app answers "what
+  should I study today" and not just "what am I bad at"
 - **A toggleable Hinglish mentor persona** — the same explanations in the register a lot of
   Indian students actually think in, switched on or off per user
 - **Per-user rate limiting and response caching**, because LLM calls cost money and students
@@ -96,7 +98,12 @@ at a new frontend deployment is a config change on the host, not a code edit and
 ```
 User ──┬── Document ──── (chunks → ChromaDB, namespaced by user)
        │
-       └── QuizAttempt ──── AttemptAnswer ──▶ Question ──▶ Quiz
+       ├── QuizAttempt ──── AttemptAnswer ──▶ Question ──▶ Quiz
+       │                                        │
+       │                                     topic_tag
+       │                                        │
+       └── TopicReview ◀────────────────────────┘
+           (SM-2 state: repetitions, interval, ease, due date)
 ```
 
 Storing `AttemptAnswer` per question rather than only a final score is what makes the
@@ -131,6 +138,8 @@ All endpoints are served under `/api/v1`. Interactive docs at `/docs`.
 | `POST` | `/quizzes/{id}/submit` | JWT | Submit answers and get graded |
 | `GET` | `/analytics/weak-topics` | JWT | Topics ranked by error rate |
 | `GET` | `/analytics/recommendations` | JWT | What to revise next, and why |
+| `GET` | `/review/due` | JWT | Topics due for review now, most overdue first |
+| `GET` | `/review/schedule` | JWT | Every tracked topic with its next review date |
 | `GET` | `/users/me/settings` | JWT | Read settings, including persona toggle |
 | `PATCH` | `/users/me/settings` | JWT | Update settings |
 
@@ -168,8 +177,9 @@ Stop with `docker compose down`.
 
 ## Tests
 
-60 tests covering auth, upload and extraction, each generator, the RAG layer, the quiz
-engine, analytics, the persona toggle, rate limiting, and caching. They run on every push
+90 tests covering auth, upload and extraction, each generator, the RAG layer, the quiz
+engine, analytics, the persona toggle, rate limiting, caching, and the spaced-repetition
+scheduler. They run on every push
 and pull request via GitHub Actions.
 
 ```bash
@@ -192,9 +202,11 @@ environment respects that.
   anything. With two attempts it is describing noise.
 - Topic labels come from the model at generation time, so the same concept can occasionally
   land under two slightly different labels and split its own statistics.
-- Schema changes currently run through `Base.metadata.create_all()`, which creates missing
-  tables but will not alter existing ones. Alembic is a dependency already and migrations
-  are the next thing to wire up.
+- Scheduling needs a few completed quizzes per topic before the intervals mean anything.
+  SM-2 was designed for flashcards reviewed daily, and a topic seen twice is still being
+  scheduled mostly on its defaults.
+- Migrations are managed by Alembic, but the free Render tier has no shell or pre-deploy
+  hook, so they are applied manually from a laptop rather than automatically on deploy.
 - The free-tier backend host sleeps when idle, so the first request after a quiet period
   can take a while.
 - This is a learning and portfolio project, not a product. Don't put anything confidential
@@ -223,8 +235,8 @@ python-pptx, slowapi, JWT via python-jose, passlib/bcrypt
 - [x] Phase 6 — PPTX and multi-document support
 - [x] Phase 7 — Hinglish student-mentor persona
 - [x] Phase 8 — Rate limiting, caching, deployment
-- [ ] Alembic migrations replacing `create_all()`
-- [ ] Spaced-repetition scheduling on top of weak-topic analytics
+- [x] Alembic migrations replacing `create_all()`
+- [x] Spaced-repetition scheduling on top of weak-topic analytics
 - [ ] OCR fallback for scanned PDFs
 
 ---

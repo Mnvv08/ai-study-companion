@@ -23,7 +23,7 @@ from app.core.config import settings
 from app.db.base import Base
 
 # Importing for the metadata side effect only — do not remove.
-from app.models import user, file, quiz  # noqa: F401
+from app.models import user, file, quiz, review  # noqa: F401
 
 config = context.config
 

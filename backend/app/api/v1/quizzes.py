@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.core.security import get_current_user
+from app.services.review_service import record_attempt_reviews
 from app.models.user import User
 from app.models.quiz import Quiz, QuizAttempt, AttemptAnswer
 from app.models.file import Document
@@ -189,6 +190,17 @@ def submit_quiz(
         db.add(attempt)
         for ans_db in answers_to_create:
             db.add(ans_db)
+
+        # Feed this attempt into the spaced-repetition schedule. Done inside
+        # the same transaction as the attempt itself: if the schedule update
+        # fails, the attempt rolls back too, rather than leaving a student
+        # with a recorded score and no corresponding review scheduled.
+        graded_by_topic = [
+            (question_map[a.question_id].topic_tag, a.is_correct)
+            for a in answers_to_create
+        ]
+        record_attempt_reviews(db, current_user.id, graded_by_topic)
+
         db.commit()
     except Exception as db_err:
         db.rollback()
