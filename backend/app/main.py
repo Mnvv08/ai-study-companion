@@ -13,22 +13,28 @@ from app.core.rate_limiter import limiter
 
 from app.core.config import settings
 from app.api.v1 import health, auth, documents, files, notes, rag, generation, quizzes, analytics, users
-from app.db.base import Base
-from app.db.session import engine
-
-# Import all models explicitly so SQLAlchemy registers their metadata
-# before Base.metadata.create_all() runs in the lifespan hook.
-# This is the correct pattern to avoid circular imports: models import
-# Base from db/base.py (which has no model imports), and main.py
-# is the single place that loads all models together.
+# Import all models explicitly so SQLAlchemy registers their metadata.
+# Models import Base from db/base.py (which imports no models), so this
+# stays free of circular imports. alembic/env.py imports the same three
+# modules for the same reason.
 from app.models import user, file, quiz  # noqa: F401, E402
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """
+    Startup and shutdown hook.
+
+    Schema creation deliberately does NOT happen here. It used to call
+    Base.metadata.create_all(), which creates missing tables but silently
+    ignores changes to tables that already exist — so the first time a
+    column was added to an existing model, production would keep running
+    against the old schema and fail at query time instead of at deploy time.
+
+    Schema is now owned by Alembic. Run `alembic upgrade head` as a release
+    step before the server starts.
+    """
     print(f"🚀 Starting {settings.APP_NAME} [{settings.APP_ENV}]")
-    Base.metadata.create_all(bind=engine)
-    print("✅ Database tables ready")
     yield
     print("🛑 Shutting down...")
 
