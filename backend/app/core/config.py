@@ -27,6 +27,20 @@ class Settings(BaseSettings):
     APP_ENV: str = Field(default="development")
     DEBUG: bool = Field(default=False)
 
+    # ── CORS ─────────────────────────────────────────────────────
+    # Comma-separated list of browser origins allowed to call this API.
+    # Kept in config (not hardcoded in main.py) so that adding a new
+    # frontend deployment is an env-var change, not a code change + redeploy.
+    ALLOWED_ORIGINS: str = Field(
+        default="http://localhost:5173",
+        description="Comma-separated allowed browser origins for CORS."
+    )
+
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        """Parse 'https://a.com,https://b.com' into a clean list, dropping blanks."""
+        return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]
+
     # ── Database ─────────────────────────────────────────────────
     DATABASE_URL: str = Field(
         ...,

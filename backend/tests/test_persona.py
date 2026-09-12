@@ -70,20 +70,20 @@ def auth_headers(test_user):
 
 def test_get_settings_unauthorized():
     """Verify that settings endpoint requires JWT authorization."""
-    response = client.get("/users/me/settings")
+    response = client.get("/api/v1/users/me/settings")
     assert response.status_code == 401
 
 
 def test_get_and_patch_settings_success(auth_headers, test_user):
     """Verify getting default settings and patching persona_mode toggles correctly."""
     # 1. GET settings (should be False by default)
-    response = client.get("/users/me/settings", headers=auth_headers)
+    response = client.get("/api/v1/users/me/settings", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["persona_mode"] is False
 
     # 2. PATCH settings to True
     patch_response = client.patch(
-        "/users/me/settings",
+        "/api/v1/users/me/settings",
         headers=auth_headers,
         json={"persona_mode": True}
     )
@@ -98,7 +98,7 @@ def test_get_and_patch_settings_success(auth_headers, test_user):
 
     # 4. PATCH settings back to False
     patch_response_false = client.patch(
-        "/users/me/settings",
+        "/api/v1/users/me/settings",
         headers=auth_headers,
         json={"persona_mode": False}
     )

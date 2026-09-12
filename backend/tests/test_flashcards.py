@@ -113,14 +113,14 @@ def sample_document(student_user):
 
 def test_generate_flashcards_unauthorized():
     """Verify that /flashcards/generate requires JWT authentication."""
-    response = client.post("/flashcards/generate", json={"document_id": "doc-networks-301"})
+    response = client.post("/api/v1/flashcards/generate", json={"document_id": "doc-networks-301"})
     assert response.status_code == 401
 
 
 def test_generate_flashcards_other_user_document_404(other_auth_headers, sample_document):
     """Verify that requesting flashcards on another user's document returns 404."""
     response = client.post(
-        "/flashcards/generate",
+        "/api/v1/flashcards/generate",
         headers=other_auth_headers,
         json={"document_id": sample_document.id},
     )
@@ -150,7 +150,7 @@ def test_generate_flashcards_success(auth_headers, sample_document, monkeypatch)
     )
 
     response = client.post(
-        "/flashcards/generate",
+        "/api/v1/flashcards/generate",
         headers=auth_headers,
         json={"document_id": sample_document.id},
     )

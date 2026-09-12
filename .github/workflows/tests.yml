@@ -1,0 +1,40 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      # Test-only values. The suite never reaches a real database or a real
+      # Groq account, but pydantic-settings requires these fields to exist
+      # or the app refuses to start — which is the intended behaviour.
+      DATABASE_URL: sqlite:///./test.db
+      SECRET_KEY: test-secret-key-not-used-outside-ci-at-least-32-chars
+      GROQ_API_KEY: test-key
+      ALLOWED_ORIGINS: http://localhost:5173
+      UPLOAD_DIR: /tmp/uploads
+      APP_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest -q

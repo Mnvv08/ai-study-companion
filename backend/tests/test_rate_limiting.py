@@ -77,10 +77,10 @@ def test_rate_limiting_exceeded_429(auth_headers):
     """Verify that making 21 requests to /analytics/recommendations triggers a 429 Rate Limit Exceeded."""
     # First 20 requests should pass successfully (or 200/404/etc, not 429)
     for i in range(20):
-        response = client.get("/analytics/recommendations", headers=auth_headers)
+        response = client.get("/api/v1/analytics/recommendations", headers=auth_headers)
         assert response.status_code != 429
 
     # The 21st request must trigger 429 Rate Limit Exceeded
-    response = client.get("/analytics/recommendations", headers=auth_headers)
+    response = client.get("/api/v1/analytics/recommendations", headers=auth_headers)
     assert response.status_code == 429
     assert "Rate limit exceeded" in response.json()["error"]
