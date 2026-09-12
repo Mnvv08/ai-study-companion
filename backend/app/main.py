@@ -12,12 +12,12 @@ from slowapi import _rate_limit_exceeded_handler
 from app.core.rate_limiter import limiter
 
 from app.core.config import settings
-from app.api.v1 import health, auth, documents, notes, rag, generation, quizzes, analytics, users
+from app.api.v1 import health, auth, documents, notes, rag, generation, quizzes, analytics, users, review
 # Import all models explicitly so SQLAlchemy registers their metadata.
 # Models import Base from db/base.py (which imports no models), so this
 # stays free of circular imports. alembic/env.py imports the same three
 # modules for the same reason.
-from app.models import user, file, quiz  # noqa: F401, E402
+from app.models import user, file, quiz, review as review_model  # noqa: F401, E402
 
 
 @asynccontextmanager
@@ -67,7 +67,7 @@ app.add_middleware(
 # Every router is mounted once, under /api/v1. Registering them a second time
 # without the prefix previously produced duplicate paths in the OpenAPI schema
 # and two URLs for every endpoint.
-for router in (health, auth, documents, notes, generation, rag, quizzes, analytics, users):
+for router in (health, auth, documents, notes, generation, rag, quizzes, analytics, users, review):
     app.include_router(router.router, prefix="/api/v1")
 
 
