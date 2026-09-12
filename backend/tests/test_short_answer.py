@@ -113,14 +113,14 @@ def sample_document(student_user):
 
 def test_generate_short_answer_unauthorized():
     """Verify that /short-answer/generate requires JWT authentication."""
-    response = client.post("/short-answer/generate", json={"document_id": "doc-arch-501"})
+    response = client.post("/api/v1/short-answer/generate", json={"document_id": "doc-arch-501"})
     assert response.status_code == 401
 
 
 def test_generate_short_answer_other_user_document_404(other_auth_headers, sample_document):
     """Verify that requesting short-answer questions on another student's document returns 404."""
     response = client.post(
-        "/short-answer/generate",
+        "/api/v1/short-answer/generate",
         headers=other_auth_headers,
         json={"document_id": sample_document.id},
     )
@@ -150,7 +150,7 @@ def test_generate_short_answer_success(auth_headers, sample_document, monkeypatc
     )
 
     response = client.post(
-        "/short-answer/generate",
+        "/api/v1/short-answer/generate",
         headers=auth_headers,
         json={"document_id": sample_document.id},
     )

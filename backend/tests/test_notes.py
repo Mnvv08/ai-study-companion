@@ -132,14 +132,14 @@ def test_defensive_json_parser():
 
 def test_generate_notes_unauthorized():
     """Verify that /notes/generate requires JWT authentication."""
-    response = client.post("/notes/generate", json={"document_id": "doc-os-200"})
+    response = client.post("/api/v1/notes/generate", json={"document_id": "doc-os-200"})
     assert response.status_code == 401
 
 
 def test_generate_notes_other_user_document_404(other_auth_headers, sample_document):
     """Verify that a user cannot generate notes for another user's document (404)."""
     response = client.post(
-        "/notes/generate",
+        "/api/v1/notes/generate",
         headers=other_auth_headers,
         json={"document_id": sample_document.id},
     )
@@ -172,7 +172,7 @@ def test_generate_notes_success(auth_headers, sample_document, monkeypatch):
     )
 
     response = client.post(
-        "/notes/generate",
+        "/api/v1/notes/generate",
         headers=auth_headers,
         json={"document_id": sample_document.id},
     )

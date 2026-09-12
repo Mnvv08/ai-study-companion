@@ -109,7 +109,7 @@ def test_notes_generation_caching_and_bypass(auth_headers, sample_document, monk
 
     # 1. First call - populates cache
     response1 = client.post(
-        "/notes/generate",
+        "/api/v1/notes/generate",
         headers=auth_headers,
         json={"document_id": sample_document.id}
     )
@@ -119,7 +119,7 @@ def test_notes_generation_caching_and_bypass(auth_headers, sample_document, monk
 
     # 2. Second call - hits cache (call_count should remain 1)
     response2 = client.post(
-        "/notes/generate",
+        "/api/v1/notes/generate",
         headers=auth_headers,
         json={"document_id": sample_document.id}
     )
@@ -129,7 +129,7 @@ def test_notes_generation_caching_and_bypass(auth_headers, sample_document, monk
 
     # 3. Third call - with force_regenerate=True bypasses cache (call_count becomes 2)
     response3 = client.post(
-        "/notes/generate",
+        "/api/v1/notes/generate",
         headers=auth_headers,
         json={"document_id": sample_document.id, "force_regenerate": True}
     )

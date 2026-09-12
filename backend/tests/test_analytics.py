@@ -111,13 +111,13 @@ def sample_document(student_user):
 
 def test_weak_topics_unauthorized():
     """Verify that GET /analytics/weak-topics requires JWT authorization."""
-    response = client.get("/analytics/weak-topics")
+    response = client.get("/api/v1/analytics/weak-topics")
     assert response.status_code == 401
 
 
 def test_weak_topics_no_history(auth_headers):
     """Verify that a user with no attempts returns an empty list, not an error."""
-    response = client.get("/analytics/weak-topics", headers=auth_headers)
+    response = client.get("/api/v1/analytics/weak-topics", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["weak_topics"] == []
@@ -173,7 +173,7 @@ def test_weak_topics_threshold_and_sorting(auth_headers, sample_document):
     db.close()
 
     # Query endpoint
-    response = client.get("/analytics/weak-topics", headers=auth_headers)
+    response = client.get("/api/v1/analytics/weak-topics", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     
@@ -213,12 +213,12 @@ def test_weak_topics_ownership_isolation(auth_headers, other_auth_headers, sampl
     db.close()
 
     # Query endpoint as user 1 (should return empty list because user 1 has no attempts)
-    response = client.get("/analytics/weak-topics", headers=auth_headers)
+    response = client.get("/api/v1/analytics/weak-topics", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["weak_topics"] == []
 
     # Query endpoint as user 2 (should return Topic ISO with 100% accuracy)
-    response2 = client.get("/analytics/weak-topics", headers=other_auth_headers)
+    response2 = client.get("/api/v1/analytics/weak-topics", headers=other_auth_headers)
     assert response2.status_code == 200
     data2 = response2.json()
     assert len(data2["weak_topics"]) == 1
@@ -228,13 +228,13 @@ def test_weak_topics_ownership_isolation(auth_headers, other_auth_headers, sampl
 
 def test_recommendations_unauthorized():
     """Verify that GET /analytics/recommendations requires JWT authorization."""
-    response = client.get("/analytics/recommendations")
+    response = client.get("/api/v1/analytics/recommendations")
     assert response.status_code == 401
 
 
 def test_recommendations_no_history(auth_headers):
     """Verify that a user with no history returns empty recommendations list."""
-    response = client.get("/analytics/recommendations", headers=auth_headers)
+    response = client.get("/api/v1/analytics/recommendations", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["recommendations"] == []
 
@@ -296,7 +296,7 @@ def test_recommendations_success(auth_headers, sample_document):
     db.commit()
     db.close()
 
-    response = client.get("/analytics/recommendations", headers=auth_headers)
+    response = client.get("/api/v1/analytics/recommendations", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
 

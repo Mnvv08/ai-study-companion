@@ -114,14 +114,14 @@ def sample_document(student_user):
 
 def test_generate_mcqs_unauthorized():
     """Verify that /mcqs/generate requires JWT authentication."""
-    response = client.post("/mcqs/generate", json={"document_id": "doc-db-401"})
+    response = client.post("/api/v1/mcqs/generate", json={"document_id": "doc-db-401"})
     assert response.status_code == 401
 
 
 def test_generate_mcqs_other_user_document_404(other_auth_headers, sample_document):
     """Verify that requesting MCQs on another student's document returns 404."""
     response = client.post(
-        "/mcqs/generate",
+        "/api/v1/mcqs/generate",
         headers=other_auth_headers,
         json={"document_id": sample_document.id},
     )
@@ -163,7 +163,7 @@ def test_generate_mcqs_success(auth_headers, sample_document, monkeypatch):
     )
 
     response = client.post(
-        "/mcqs/generate",
+        "/api/v1/mcqs/generate",
         headers=auth_headers,
         json={"document_id": sample_document.id},
     )

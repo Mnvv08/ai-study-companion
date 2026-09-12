@@ -114,14 +114,14 @@ def sample_document(student_user):
 
 def test_ask_question_unauthorized_fails():
     """Verify that /qa/ask requires a valid JWT."""
-    response = client.post("/qa/ask", json={"document_id": "doc-algo-101", "question": "What is Dijkstra?"})
+    response = client.post("/api/v1/qa/ask", json={"document_id": "doc-algo-101", "question": "What is Dijkstra?"})
     assert response.status_code == 401
 
 
 def test_ask_question_other_user_document_returns_404(other_auth_headers, sample_document):
     """Verify that asking questions on another student's document returns 404 (multi-tenant security)."""
     response = client.post(
-        "/qa/ask",
+        "/api/v1/qa/ask",
         headers=other_auth_headers,
         json={"document_id": sample_document.id, "question": "What is the time complexity?"},
     )
@@ -148,7 +148,7 @@ def test_ask_question_success(auth_headers, sample_document, monkeypatch):
     )
 
     response = client.post(
-        "/qa/ask",
+        "/api/v1/qa/ask",
         headers=auth_headers,
         json={"document_id": sample_document.id, "question": "What does Dijkstra algorithm do?"},
     )
@@ -175,7 +175,7 @@ def test_ask_question_no_context_returns_clean_fallback(auth_headers, sample_doc
     db.close()
 
     response = client.post(
-        "/qa/ask",
+        "/api/v1/qa/ask",
         headers=auth_headers,
         json={"document_id": sample_document.id, "question": "What is quantum entanglement?"},
     )
@@ -187,7 +187,7 @@ def test_ask_question_no_context_returns_clean_fallback(auth_headers, sample_doc
 
 def test_ask_question_multi_unauthorized():
     """Verify that /qa/ask-multi requires valid JWT authorization."""
-    response = client.post("/qa/ask-multi", json={"document_ids": ["doc-1"], "question": "What is Dijkstra?"})
+    response = client.post("/api/v1/qa/ask-multi", json={"document_ids": ["doc-1"], "question": "What is Dijkstra?"})
     assert response.status_code == 401
 
 
@@ -195,7 +195,7 @@ def test_ask_question_multi_not_found(auth_headers, sample_document):
     """Verify that /qa/ask-multi returns 404 if any document ID is invalid or belongs to another user."""
     # Try querying sample_document and another fake one
     response = client.post(
-        "/qa/ask-multi",
+        "/api/v1/qa/ask-multi",
         headers=auth_headers,
         json={"document_ids": [sample_document.id, "fake-doc-999"], "question": "What is Dijkstra?"}
     )
@@ -249,7 +249,7 @@ def test_ask_question_multi_success(auth_headers, student_user, sample_document,
     }
 
     response = client.post(
-        "/qa/ask-multi",
+        "/api/v1/qa/ask-multi",
         headers=auth_headers,
         json=payload
     )

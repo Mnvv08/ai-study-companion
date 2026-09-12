@@ -129,7 +129,7 @@ def test_mcq_generation_persists_quiz_and_questions(auth_headers, sample_documen
     )
 
     response = client.post(
-        "/mcqs/generate",
+        "/api/v1/mcqs/generate",
         headers=auth_headers,
         json={"document_id": sample_document.id},
     )
@@ -173,7 +173,7 @@ def test_short_answer_generation_persists_quiz_and_questions(auth_headers, sampl
     )
 
     response = client.post(
-        "/short-answer/generate",
+        "/api/v1/short-answer/generate",
         headers=auth_headers,
         json={"document_id": sample_document.id},
     )
@@ -222,7 +222,7 @@ def test_get_quiz_hides_correct_answers(auth_headers, sample_document):
 
     # Get quiz via endpoint
     response = client.get(
-        "/quizzes/test-quiz-abc",
+        "/api/v1/quizzes/test-quiz-abc",
         headers=auth_headers
     )
     assert response.status_code == 200
@@ -255,7 +255,7 @@ def test_get_quiz_other_user_returns_404(auth_headers, other_auth_headers, sampl
 
     # Request with other user headers
     response = client.get(
-        "/quizzes/test-quiz-other",
+        "/api/v1/quizzes/test-quiz-other",
         headers=other_auth_headers
     )
     assert response.status_code == 404
@@ -265,7 +265,7 @@ def test_get_quiz_other_user_returns_404(auth_headers, other_auth_headers, sampl
 def test_get_quiz_non_existent_returns_404(auth_headers):
     """Verify that requesting non-existent quiz returns 404."""
     response = client.get(
-        "/quizzes/non-existent-quiz-id",
+        "/api/v1/quizzes/non-existent-quiz-id",
         headers=auth_headers
     )
     assert response.status_code == 404
@@ -310,7 +310,7 @@ def test_submit_mcq_quiz_success(auth_headers, sample_document):
     }
 
     response = client.post(
-        "/quizzes/mcq-quiz-submit/submit",
+        "/api/v1/quizzes/mcq-quiz-submit/submit",
         headers=auth_headers,
         json=payload
     )
@@ -373,7 +373,7 @@ def test_submit_short_answer_quiz_success(auth_headers, sample_document):
     }
 
     response = client.post(
-        "/quizzes/sa-quiz-submit/submit",
+        "/api/v1/quizzes/sa-quiz-submit/submit",
         headers=auth_headers,
         json=payload
     )
@@ -402,7 +402,7 @@ def test_submit_quiz_other_user_document_404(other_auth_headers, sample_document
     }
 
     response = client.post(
-        "/quizzes/sa-quiz-other-submit/submit",
+        "/api/v1/quizzes/sa-quiz-other-submit/submit",
         headers=other_auth_headers,
         json=payload
     )
@@ -412,7 +412,7 @@ def test_submit_quiz_other_user_document_404(other_auth_headers, sample_document
 
 def test_get_quiz_history_empty(auth_headers):
     """Verify that get_quiz_history returns an empty list when the user has no history."""
-    response = client.get("/quizzes/history", headers=auth_headers)
+    response = client.get("/api/v1/quizzes/history", headers=auth_headers)
     assert response.status_code == 200
     assert response.json() == []
 
@@ -453,7 +453,7 @@ def test_get_quiz_history_success(auth_headers, sample_document, student_user):
     db.commit()
     db.close()
 
-    response = client.get("/quizzes/history", headers=auth_headers)
+    response = client.get("/api/v1/quizzes/history", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 2

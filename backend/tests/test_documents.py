@@ -97,7 +97,7 @@ def test_upload_without_auth_fails():
     """Verify that document upload is protected and returns 401 without JWT."""
     pdf_content = b"%PDF-1.4 Fake PDF Content for testing"
     files = {"file": ("notes.pdf", io.BytesIO(pdf_content), "application/pdf")}
-    response = client.post("/documents/upload", files=files)
+    response = client.post("/api/v1/documents/upload", files=files)
     assert response.status_code == 401
 
 
@@ -105,7 +105,7 @@ def test_upload_non_pdf_rejected(auth_headers):
     """Verify that non-PDF/non-PPTX files (e.g. .txt, .exe, .png) are rejected at the edge with 400."""
     txt_content = b"This is plain text, not a PDF."
     files = {"file": ("notes.txt", io.BytesIO(txt_content), "text/plain")}
-    response = client.post("/documents/upload", headers=auth_headers, files=files)
+    response = client.post("/api/v1/documents/upload", headers=auth_headers, files=files)
     assert response.status_code == 400
     assert "Only PDF and PPTX/PPT files are supported" in response.json()["detail"]
 
@@ -118,7 +118,7 @@ def test_upload_oversized_file_rejected(auth_headers, monkeypatch):
     # 1.5 MB payload
     large_content = b"0" * int(1.5 * 1024 * 1024)
     files = {"file": ("huge_lecture.pdf", io.BytesIO(large_content), "application/pdf")}
-    response = client.post("/documents/upload", headers=auth_headers, files=files)
+    response = client.post("/api/v1/documents/upload", headers=auth_headers, files=files)
     assert response.status_code == 413
     assert "exceeds the maximum allowed limit" in response.json()["detail"]
 
@@ -133,7 +133,7 @@ def test_upload_valid_pdf_success(auth_headers, test_user, monkeypatch):
     pdf_content = b"%PDF-1.4 valid stream mock"
     files = {"file": ("algorithms_lecture1.pdf", io.BytesIO(pdf_content), "application/pdf")}
     
-    response = client.post("/documents/upload", headers=auth_headers, files=files)
+    response = client.post("/api/v1/documents/upload", headers=auth_headers, files=files)
     assert response.status_code == 201
     data = response.json()
     assert "id" in data
@@ -157,7 +157,7 @@ def test_upload_valid_pptx_success(auth_headers, test_user, monkeypatch):
         )
     }
     
-    response = client.post("/documents/upload", headers=auth_headers, files=files)
+    response = client.post("/api/v1/documents/upload", headers=auth_headers, files=files)
     assert response.status_code == 201
     data = response.json()
     assert "id" in data
@@ -171,7 +171,7 @@ def test_upload_unreadable_pdf_marks_status_failed_without_crashing(auth_headers
     junk_pdf_content = b"%PDF-1.4 JUNK NOT REAL PDF DATA"
     files = {"file": ("corrupt.pdf", io.BytesIO(junk_pdf_content), "application/pdf")}
     
-    response = client.post("/documents/upload", headers=auth_headers, files=files)
+    response = client.post("/api/v1/documents/upload", headers=auth_headers, files=files)
     assert response.status_code == 201
     data = response.json()
     assert data["status"] == "failed"
@@ -194,7 +194,7 @@ def test_get_document_status(auth_headers, test_user):
     db.commit()
     db.close()
 
-    response = client.get("/documents/doc-xyz-789/status", headers=auth_headers)
+    response = client.get("/api/v1/documents/doc-xyz-789/status", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == "doc-xyz-789"
@@ -219,6 +219,6 @@ def test_get_document_status_unauthorized_user_gets_404(other_auth_headers, test
     db.close()
 
     # Query with other user's auth token
-    response = client.get("/documents/doc-private-111/status", headers=other_auth_headers)
+    response = client.get("/api/v1/documents/doc-private-111/status", headers=other_auth_headers)
     assert response.status_code == 404
     assert response.json()["detail"] == "Document not found."
